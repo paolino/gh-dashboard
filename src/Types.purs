@@ -4,6 +4,7 @@ module Types
   , Issue(..)
   , PullRequest(..)
   , RepoDetail
+  , CheckRun(..)
   , Label
   , Assignee
   ) where
@@ -149,11 +150,34 @@ instance DecodeJson PullRequest where
         , headSha: headSha_
         }
 
+-- | A single CI check run.
+newtype CheckRun = CheckRun
+  { name :: String
+  , status :: String
+  , conclusion :: Maybe String
+  , htmlUrl :: String
+  }
+
+instance DecodeJson CheckRun where
+  decodeJson json = case toObject json of
+    Nothing -> Left (TypeMismatch "Object")
+    Just obj -> do
+      name_ <- obj .: "name"
+      status_ <- obj .: "status"
+      conclusion_ <- obj .:? "conclusion"
+      htmlUrl_ <- obj .: "html_url"
+      pure $ CheckRun
+        { name: name_
+        , status: status_
+        , conclusion: conclusion_
+        , htmlUrl: htmlUrl_
+        }
+
 -- | Cached detail for an expanded repo.
 type RepoDetail =
   { issues :: Array Issue
   , pullRequests :: Array PullRequest
   , issueCount :: Int
   , prCount :: Int
-  , prStatuses :: Map Int String
+  , prChecks :: Map Int (Array CheckRun)
   }

@@ -8,7 +8,7 @@ module View
 
 import Prelude
 
-import Data.Array (length, null, partition)
+import Data.Array (all, any, filter, length, null, partition)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set (Set)
@@ -21,6 +21,7 @@ import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Types
   ( Assignee
+  , CheckRun(..)
   , Issue(..)
   , Label
   , PullRequest(..)
@@ -760,7 +761,7 @@ renderPRsSection state prs count =
             )
       ]
 
--- | Single PR row + optional body row.
+-- | Single PR row + optional body/checks rows.
 renderPRRow
   :: forall w
    . State
@@ -772,8 +773,10 @@ renderPRRow state isHidden (PullRequest pr) =
     prefix = if isHidden then "h-pr-" else "pr-"
     key = prefix <> show pr.number
     isOpen = Set.member key state.expandedItems
-    status = state.details >>= \d ->
-      Map.lookup pr.number d.prStatuses
+    checks = state.details >>= \d ->
+      Map.lookup pr.number d.prChecks
+    combined = combineCheckRuns
+      (fromMaybe [] checks)
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
@@ -804,7 +807,7 @@ renderPRRow state isHidden (PullRequest pr) =
                       ]
                     else []
                   )
-                <> [ statusBadge status ]
+                <> [ statusBadge checks combined ]
             )
         , HH.td_
             [ renderAssignees pr.assignees ]
@@ -833,6 +836,8 @@ renderPRRow state isHidden (PullRequest pr) =
       <>
         if isOpen then
           renderMarkdownRow pr.body
+            <> renderCheckRuns state pr.number
+              checks
         else []
 
 -- | Row with markdown-rendered body.
@@ -862,21 +867,127 @@ renderMarkdownRow = case _ of
         ]
     ]
 
--- | CI status badge for a PR.
+-- | CI status badge for a PR (derived from checks).
 statusBadge
-  :: forall w i. Maybe String -> HH.HTML w i
-statusBadge = case _ of
-  Nothing -> HH.text ""
-  Just st ->
-    HH.span
-      [ HP.class_
-          ( HH.ClassName
-              ( "label-tag ci-badge ci-"
-                  <> st
-              )
-          )
+  :: forall w i
+   . Maybe (Array CheckRun)
+  -> String
+  -> HH.HTML w i
+statusBadge Nothing _ = HH.text ""
+statusBadge (Just _) combined =
+  HH.span
+    [ HP.class_
+        ( HH.ClassName
+            ( "label-tag ci-badge ci-"
+                <> combined
+            )
+        )
+    ]
+    [ HH.text combined ]
+
+-- | Derive combined state from check runs.
+combineCheckRuns :: Array CheckRun -> String
+combineCheckRuns runs
+  | null runs = "unknown"
+  | any (\(CheckRun r) -> r.status /= "completed")
+      runs = "pending"
+  | any
+      (\(CheckRun r) -> r.conclusion == Just "failure")
+      runs = "failure"
+  | any
+      ( \(CheckRun r) ->
+          r.conclusion == Just "cancelled"
+      )
+      runs = "cancelled"
+  | all
+      (\(CheckRun r) -> r.conclusion == Just "success")
+      runs = "success"
+  | otherwise = "mixed"
+
+-- | Render non-success check runs as collapsible section.
+renderCheckRuns
+  :: forall w
+   . State
+  -> Int
+  -> Maybe (Array CheckRun)
+  -> Array (HH.HTML w Action)
+renderCheckRuns _ _ Nothing = []
+renderCheckRuns state prNum (Just runs) =
+  let
+    failed = filter
+      ( \(CheckRun r) ->
+          r.conclusion /= Just "success"
+      )
+      runs
+    key = "checks-" <> show prNum
+    isOpen = Set.member key state.expandedItems
+  in
+    if null failed then []
+    else
+      [ HH.tr
+          [ HP.class_ (HH.ClassName "detail-row") ]
+          [ HH.td
+              [ HP.colSpan 6
+              , HP.class_
+                  ( HH.ClassName
+                      "hidden-separator clickable"
+                  )
+              , HE.onClick \_ -> ToggleItem key
+              ]
+              [ HH.text
+                  ( ( if isOpen then "\x25BE "
+                      else "\x25B8 "
+                    )
+                      <> "Checks ("
+                      <> show (length failed)
+                      <> ")"
+                  )
+              ]
+          ]
       ]
-      [ HH.text st ]
+        <>
+          if isOpen then
+            [ HH.tr
+                [ HP.class_
+                    (HH.ClassName "detail-row")
+                ]
+                [ HH.td
+                    [ HP.colSpan 6 ]
+                    [ HH.div
+                        [ HP.class_
+                            (HH.ClassName "check-runs")
+                        ]
+                        (map renderCheckRun failed)
+                    ]
+                ]
+            ]
+          else []
+
+-- | Render a single check run.
+renderCheckRun :: forall w i. CheckRun -> HH.HTML w i
+renderCheckRun (CheckRun run) =
+  let
+    st = fromMaybe run.status run.conclusion
+  in
+    HH.div
+      [ HP.class_
+          (HH.ClassName "check-run")
+      ]
+      [ HH.span
+          [ HP.class_
+              ( HH.ClassName
+                  ("label-tag ci-badge ci-" <> st)
+              )
+          ]
+          [ HH.text st ]
+      , HH.a
+          [ HP.href run.htmlUrl
+          , HP.target "_blank"
+          , HP.class_
+              (HH.ClassName "detail-link check-name")
+          ]
+          [ HH.text run.name ]
+      ]
 
 -- | Small link button that opens a URL.
 linkButton :: forall w i. String -> HH.HTML w i
