@@ -27,6 +27,7 @@ renderRepoTable state repos =
     [ HH.thead_
         [ HH.tr_
             [ HH.th_ []
+            , HH.th_ []
             , HH.th_
                 [ HH.text "Repository" ]
             , HH.th_
@@ -73,6 +74,17 @@ renderRepoRow state (Repo r) =
             ]
             [ HH.text "\x2630" ]
         , HH.td_
+            [ HH.button
+                [ HE.onClick \_ ->
+                    RefreshRepo r.fullName
+                , HP.class_
+                    (HH.ClassName "btn-hide")
+                , HP.attr (AttrName "onclick")
+                    "event.stopPropagation()"
+                ]
+                [ HH.text "\x21BB" ]
+            ]
+        , HH.td_
             [ HH.span
                 [ HP.class_
                     (HH.ClassName "repo-name")
@@ -113,7 +125,7 @@ renderRepoRow state (Repo r) =
                 , HP.class_
                     (HH.ClassName "btn-remove")
                 ]
-                [ HH.text "\x2715" ]
+                [ HH.text "\xD83D\xDDD1" ]
             ]
         ]
     ]

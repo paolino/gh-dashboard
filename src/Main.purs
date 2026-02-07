@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Array (filter, findIndex, length, null, take)
 import Data.Array as Array
-import Data.Traversable (traverse)
+import Data.Traversable (traverse, traverse_)
 import Data.Either (Either(..))
 import Data.Map as Map
 import Data.Tuple (Tuple(..))
@@ -17,8 +17,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import GitHub
-  ( RateLimit
-  , fetchCheckRuns
+  ( fetchCheckRuns
   , fetchCommitStatuses
   , fetchIssue
   , fetchPR
@@ -138,10 +137,15 @@ handleAction = case _ of
         , loading = true
         }
       doRefresh st.token
-  Refresh -> do
+  RefreshRepo fullName -> do
     st <- H.get
-    H.modify_ _ { loading = true }
-    doRefresh st.token
+    result <- H.liftAff
+      (fetchRepo st.token fullName)
+    case result of
+      Left _ -> pure unit
+      Right repo ->
+        H.modify_ _
+          { repos = upsertRepo repo st.repos }
   RefreshIssues -> do
     st <- H.get
     case st.expanded of
@@ -368,25 +372,29 @@ handleAction = case _ of
                 }
               liftEffect $ saveRepoList newList
   RemoveRepo fullName -> do
-    st <- H.get
-    let
-      newList = filter (_ /= fullName) st.repoList
-      newRepos = filter
-        (\(Repo r) -> r.fullName /= fullName)
-        st.repos
-    H.modify_ _
-      { repoList = newList
-      , repos = newRepos
-      , expanded =
-          if st.expanded == Just fullName then
-            Nothing
-          else st.expanded
-      , details =
-          if st.expanded == Just fullName then
-            Nothing
-          else st.details
-      }
-    liftEffect $ saveRepoList newList
+    ok <- liftEffect do
+      w <- window
+      confirm ("Remove " <> fullName <> "?") w
+    when ok do
+      st <- H.get
+      let
+        newList = filter (_ /= fullName) st.repoList
+        newRepos = filter
+          (\(Repo r) -> r.fullName /= fullName)
+          st.repos
+      H.modify_ _
+        { repoList = newList
+        , repos = newRepos
+        , expanded =
+            if st.expanded == Just fullName then
+              Nothing
+            else st.expanded
+        , details =
+            if st.expanded == Just fullName then
+              Nothing
+            else st.details
+        }
+      liftEffect $ saveRepoList newList
   HideItem url -> do
     st <- H.get
     let
@@ -448,7 +456,7 @@ doRefresh token = do
           { error = Just err, loading = false }
       Right { repos, rateLimit } -> do
         let
-          seeded = take 15 repos
+          seeded = take 25 repos
           names = map
             (\(Repo r) -> r.fullName)
             seeded
@@ -461,44 +469,37 @@ doRefresh token = do
           }
         liftEffect $ saveRepoList names
   else do
-    results <- H.liftAff $
-      fetchRepoList token st.repoList
-    H.modify_ _
-      { repos = orderRepos st.repoList results.repos
-      , rateLimit = results.rateLimit
-      , loading = false
-      , error = results.error
-      }
+    traverse_
+      ( \name -> do
+          result <- H.liftAff (fetchRepo token name)
+          case result of
+            Left _ -> pure unit
+            Right repo -> do
+              st2 <- H.get
+              let
+                updated = upsertRepo repo st2.repos
+              H.modify_ _
+                { repos = orderRepos st2.repoList
+                    updated
+                }
+      )
+      st.repoList
+    H.modify_ _ { loading = false }
 
--- | Fetch all repos in the stored list individually.
-fetchRepoList
-  :: String
-  -> Array String
-  -> Aff
-       { repos :: Array Repo
-       , rateLimit :: Maybe RateLimit
-       , error :: Maybe String
-       }
-fetchRepoList token names = do
-  results <- traverse (fetchRepo token) names
-  let
-    repos = Array.catMaybes $ map
-      ( case _ of
-          Right r -> Just r
-          Left _ -> Nothing
+-- | Insert or update a repo in the array.
+upsertRepo :: Repo -> Array Repo -> Array Repo
+upsertRepo repo@(Repo r) repos =
+  if Array.any
+    (\(Repo x) -> x.fullName == r.fullName)
+    repos
+  then
+    map
+      ( \(Repo x) ->
+          if x.fullName == r.fullName then repo
+          else Repo x
       )
-      results
-    firstErr = Array.findMap
-      ( case _ of
-          Left e -> Just e
-          Right _ -> Nothing
-      )
-      results
-  pure
-    { repos
-    , rateLimit: Nothing
-    , error: firstErr
-    }
+      repos
+  else Array.snoc repos repo
 
 -- | Order repos to match the stored list.
 orderRepos :: Array String -> Array Repo -> Array Repo
