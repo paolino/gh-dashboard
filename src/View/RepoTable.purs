@@ -69,6 +69,7 @@ renderRepoRow state (Repo r) =
             [ HP.class_
                 (HH.ClassName "drag-handle")
             , HP.draggable true
+            , HP.title "Drag to reorder"
             , HE.onDragStart \_ -> DragStart
                 r.fullName
             ]
@@ -79,10 +80,22 @@ renderRepoRow state (Repo r) =
                     RefreshRepo r.fullName
                 , HP.class_
                     (HH.ClassName "btn-hide")
+                , HP.title "Refresh"
                 , HP.attr (AttrName "onclick")
                     "event.stopPropagation()"
                 ]
                 [ HH.text "\x21BB" ]
+            , HH.button
+                [ HE.onClick \_ -> RemoveRepo
+                    r.fullName
+                , HP.class_
+                    (HH.ClassName "btn-remove")
+                , HP.title "Remove"
+                , HP.attr (AttrName "onclick")
+                    "event.stopPropagation()"
+                ]
+                [ HH.text "\xD83D\xDDD1" ]
+            , linkButton r.htmlUrl
             ]
         , HH.td_
             [ HH.span
@@ -115,17 +128,6 @@ renderRepoRow state (Repo r) =
                 [ HH.text
                     (formatDate r.updatedAt)
                 ]
-            ]
-        , HH.td_
-            [ linkButton r.htmlUrl ]
-        , HH.td_
-            [ HH.button
-                [ HE.onClick \_ -> RemoveRepo
-                    r.fullName
-                , HP.class_
-                    (HH.ClassName "btn-remove")
-                ]
-                [ HH.text "\xD83D\xDDD1" ]
             ]
         ]
     ]

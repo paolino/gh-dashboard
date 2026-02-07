@@ -55,6 +55,7 @@ linkButton url =
     [ HP.href url
     , HP.target "_blank"
     , HP.class_ (HH.ClassName "link-btn")
+    , HP.title "Open on GitHub"
     ]
     [ HH.text "\x2197" ]
 
@@ -67,8 +68,6 @@ detailHead =
         , HH.th_ [ HH.text "Assignees" ]
         , HH.th_ [ HH.text "Author" ]
         , HH.th_ [ HH.text "Date" ]
-        , HH.th_ []
-        , HH.th_ []
         ]
     ]
 
@@ -86,7 +85,7 @@ renderAssignees assignees =
           (joinWith ", " (map _.login assignees))
       ]
 
--- | Render label tags.
+-- | Render label tags (non-clickable, for rows).
 renderLabels
   :: forall w i. Array Label -> HH.HTML w i
 renderLabels labels =
