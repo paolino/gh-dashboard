@@ -14,13 +14,14 @@ import Data.String (Pattern(..), contains, toLower, trim)
 import Data.String (replaceAll, split) as Str
 import Data.String.Pattern (Replacement(..))
 import Effect (Effect)
-import Effect.Aff (Aff, Milliseconds(..), delay)
-import Effect.Aff as Aff
+import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import GitHub
   ( RateLimit
   , fetchCheckRuns
   , fetchCommitStatuses
+  , fetchIssue
+  , fetchPR
   , fetchRepo
   , fetchRepoIssues
   , fetchRepoPRs
@@ -28,7 +29,6 @@ import GitHub
   )
 import Halogen as H
 import Halogen.Aff as HA
-import Halogen.Subscription as HS
 import Halogen.VDom.Driver (runUI)
 import Storage
   ( clearAll
@@ -39,7 +39,7 @@ import Storage
   , saveToken
   , saveHidden
   )
-import Types (PullRequest(..), Repo(..))
+import Types (Issue(..), PullRequest(..), Repo(..))
 import View (Action(..), State, renderDashboard, renderTokenForm)
 import Web.HTML (window)
 import Web.HTML.Window (confirm)
@@ -71,12 +71,9 @@ initialState =
   , loading: false
   , error: Nothing
   , rateLimit: Nothing
-  , interval: 60
-  , secondsLeft: 60
   , filterText: ""
   , hasToken: false
   , expandedItems: Set.empty
-  , autoRefresh: true
   , repoList: []
   , hiddenItems: Set.empty
   , dragging: Nothing
@@ -126,21 +123,6 @@ handleAction = case _ of
         H.modify_ _
           { token = tok, hasToken = true }
         doRefresh tok
-    _ <- H.subscribe $ ticker 1000.0
-    pure unit
-  Tick -> do
-    st <- H.get
-    if not st.hasToken || not st.autoRefresh then
-      pure unit
-    else if st.secondsLeft <= 1 then do
-      H.modify_ _
-        { loading = true
-        , secondsLeft = st.interval
-        }
-      doRefresh st.token
-    else
-      H.modify_ _
-        { secondsLeft = st.secondsLeft - 1 }
   SetToken tok ->
     H.modify_ _ { token = tok }
   SubmitToken -> do
@@ -154,16 +136,148 @@ handleAction = case _ of
         { hasToken = true
         , error = Nothing
         , loading = true
-        , secondsLeft = st.interval
         }
       doRefresh st.token
   Refresh -> do
     st <- H.get
-    H.modify_ _
-      { loading = true
-      , secondsLeft = st.interval
-      }
+    H.modify_ _ { loading = true }
     doRefresh st.token
+  RefreshIssues -> do
+    st <- H.get
+    case st.expanded of
+      Nothing -> pure unit
+      Just fullName -> do
+        result <- H.liftAff
+          (fetchRepoIssues st.token fullName)
+        st2 <- H.get
+        when (st2.expanded == Just fullName) do
+          let
+            issues = case result of
+              Right is -> is
+              Left _ -> []
+          case st2.details of
+            Nothing ->
+              H.modify_ _
+                { details = Just
+                    { issues
+                    , pullRequests: []
+                    , issueCount: length issues
+                    , prCount: 0
+                    , prChecks: Map.empty
+                    }
+                }
+            Just detail ->
+              H.modify_ _
+                { details = Just detail
+                    { issues = issues
+                    , issueCount = length issues
+                    }
+                }
+  RefreshIssue issueNum -> do
+    st <- H.get
+    case st.expanded of
+      Nothing -> pure unit
+      Just fullName -> do
+        result <- H.liftAff
+          (fetchIssue st.token fullName issueNum)
+        st2 <- H.get
+        when (st2.expanded == Just fullName) do
+          case result of
+            Left _ -> pure unit
+            Right issue ->
+              case st2.details of
+                Nothing ->
+                  H.modify_ _
+                    { details = Just
+                        { issues: [ issue ]
+                        , pullRequests: []
+                        , issueCount: 1
+                        , prCount: 0
+                        , prChecks: Map.empty
+                        }
+                    }
+                Just detail ->
+                  let
+                    updated = map
+                      ( \(Issue i) ->
+                          if i.number == issueNum
+                            then issue
+                          else Issue i
+                      )
+                      detail.issues
+                  in
+                    H.modify_ _
+                      { details = Just detail
+                          { issues = updated }
+                      }
+  RefreshPRs -> do
+    st <- H.get
+    case st.expanded of
+      Nothing -> pure unit
+      Just fullName -> do
+        prsResult <- H.liftAff
+          (fetchRepoPRs st.token fullName)
+        st2 <- H.get
+        when (st2.expanded == Just fullName) do
+          let
+            prs = case prsResult of
+              Right ps -> ps
+              Left _ -> []
+            visiblePRs = filter
+              ( \(PullRequest p) ->
+                  not
+                    ( Set.member p.htmlUrl
+                        st2.hiddenItems
+                    )
+              )
+              prs
+          checkResults <- H.liftAff $ traverse
+            ( \(PullRequest pr) -> do
+                cr <- fetchCheckRuns st2.token
+                  fullName
+                  pr.headSha
+                cs <- fetchCommitStatuses
+                  st2.token
+                  fullName
+                  pr.headSha
+                let
+                  runs = case cr of
+                    Right r -> r
+                    Left _ -> []
+                  statuses = case cs of
+                    Right s -> s
+                    Left _ -> []
+                pure $ Tuple pr.number
+                  (runs <> statuses)
+            )
+            visiblePRs
+          let
+            checks = Map.fromFoldable checkResults
+          case st2.details of
+            Nothing ->
+              H.modify_ _
+                { details = Just
+                    { issues: []
+                    , pullRequests: prs
+                    , issueCount: 0
+                    , prCount: length prs
+                    , prChecks: checks
+                    }
+                }
+            Just detail ->
+              H.modify_ _
+                { details = Just detail
+                    { pullRequests = prs
+                    , prCount = length prs
+                    , prChecks = checks
+                    }
+                }
+  RefreshPR prNum -> do
+    st <- H.get
+    case st.expanded of
+      Nothing -> pure unit
+      Just fullName ->
+        refreshSinglePR st.token fullName prNum
   ToggleExpand fullName -> do
     st <- H.get
     if st.expanded == Just fullName then
@@ -173,14 +287,13 @@ handleAction = case _ of
         , detailLoading = false
         , expandedItems = Set.empty
         }
-    else do
+    else
       H.modify_ _
         { expanded = Just fullName
-        , detailLoading = true
+        , detailLoading = false
         , details = Nothing
         , expandedItems = Set.empty
         }
-      fetchDetail st.token fullName
   ToggleItem key -> do
     st <- H.get
     H.modify_ _
@@ -191,21 +304,6 @@ handleAction = case _ of
       }
   SetFilter txt ->
     H.modify_ _ { filterText = txt }
-  ToggleAutoRefresh -> do
-    st <- H.get
-    H.modify_ _
-      { autoRefresh = not st.autoRefresh
-      , secondsLeft = st.interval
-      }
-  ChangeInterval delta -> do
-    st <- H.get
-    let
-      newInterval = max 10 (st.interval + delta)
-    H.modify_ _
-      { interval = newInterval
-      , secondsLeft = min st.secondsLeft
-          newInterval
-      }
   DragStart fullName ->
     H.modify_ _ { dragging = Just fullName }
   DragDrop targetName -> do
@@ -411,74 +509,62 @@ orderRepos order repos = Array.catMaybes $ map
   )
   order
 
--- | Fetch detail for one repo.
-fetchDetail
+-- | Re-fetch a single PR and its check runs.
+refreshSinglePR
   :: forall o
    . String
   -> String
+  -> Int
   -> H.HalogenM State Action () o Aff Unit
-fetchDetail token fullName = do
-  issuesResult <- H.liftAff
-    (fetchRepoIssues token fullName)
-  prsResult <- H.liftAff
-    (fetchRepoPRs token fullName)
-  st <- H.get
-  when (st.expanded == Just fullName) do
-    let
-      issues = case issuesResult of
-        Right is -> is
-        Left _ -> []
-      prs = case prsResult of
-        Right ps -> ps
-        Left _ -> []
-    let
-      visiblePRs = filter
-        ( \(PullRequest p) ->
-            not (Set.member p.htmlUrl st.hiddenItems)
-        )
-        prs
-    checkResults <- H.liftAff $ traverse
-      ( \(PullRequest pr) -> do
-          cr <- fetchCheckRuns token fullName
-            pr.headSha
-          cs <- fetchCommitStatuses token fullName
-            pr.headSha
+refreshSinglePR token fullName prNum = do
+  prResult <- H.liftAff
+    (fetchPR token fullName prNum)
+  case prResult of
+    Left _ -> pure unit
+    Right newPR@(PullRequest pr) -> do
+      cr <- H.liftAff $
+        fetchCheckRuns token fullName pr.headSha
+      cs <- H.liftAff $
+        fetchCommitStatuses token fullName
+          pr.headSha
+      let
+        runs = case cr of
+          Right r -> r
+          Left _ -> []
+        statuses = case cs of
+          Right s -> s
+          Left _ -> []
+        newChecks = runs <> statuses
+      st <- H.get
+      case st.details of
+        Nothing ->
+          H.modify_ _
+            { details = Just
+                { issues: []
+                , pullRequests: [ newPR ]
+                , issueCount: 0
+                , prCount: 1
+                , prChecks: Map.singleton prNum
+                    newChecks
+                }
+            }
+        Just detail ->
           let
-            runs = case cr of
-              Right r -> r
-              Left _ -> []
-            statuses = case cs of
-              Right s -> s
-              Left _ -> []
-          pure $ Tuple pr.number
-            (runs <> statuses)
-      )
-      visiblePRs
-    let
-      checks = Map.fromFoldable checkResults
-      detail =
-        { issues
-        , pullRequests: prs
-        , issueCount: length issues
-        , prCount: length prs
-        , prChecks: checks
-        }
-    H.modify_ _
-      { details = Just detail
-      , detailLoading = false
-      }
-
-ticker :: Number -> HS.Emitter Action
-ticker ms = HS.makeEmitter \emit -> do
-  fiber <- Aff.launchAff do
-    loop emit
-  pure $ Aff.launchAff_
-    (Aff.killFiber (Aff.error "unsubscribe") fiber)
-  where
-  loop emit = do
-    delay (Milliseconds ms)
-    liftEffect (emit Tick)
-    loop emit
+            updated = map
+              ( \(PullRequest p) ->
+                  if p.number == prNum then newPR
+                  else PullRequest p
+              )
+              detail.pullRequests
+          in
+            H.modify_ _
+              { details = Just detail
+                  { pullRequests = updated
+                  , prChecks = Map.insert prNum
+                      newChecks
+                      detail.prChecks
+                  }
+              }
 
 moveItem :: String -> String -> Array String -> Array String
 moveItem src target order =
