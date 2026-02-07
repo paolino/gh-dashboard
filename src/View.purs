@@ -46,6 +46,7 @@ data Action
   | SetSort SortField
   | SetFilter String
   | ChangeInterval Int
+  | ToggleAutoRefresh
   | ResetAll
 
 -- | Application state (referenced by view).
@@ -65,6 +66,7 @@ type State =
   , filterText :: String
   , hasToken :: Boolean
   , expandedItems :: Set String
+  , autoRefresh :: Boolean
   }
 
 -- | Token input form shown when no token is set.
@@ -210,14 +212,30 @@ renderToolbar state =
     , HH.div
         [ HP.class_ (HH.ClassName "toolbar-timer") ]
         [ HH.button
+            [ HE.onClick \_ -> ToggleAutoRefresh
+            , HP.class_
+                ( HH.ClassName
+                    ( "btn-small"
+                        <> activeIf state.autoRefresh
+                    )
+                )
+            ]
+            [ HH.text
+                ( if state.autoRefresh then "Auto"
+                  else "Paused"
+                )
+            ]
+        , HH.button
             [ HE.onClick \_ -> ChangeInterval (-5)
             , HP.class_ (HH.ClassName "btn-small")
             ]
             [ HH.text "-" ]
         , HH.text
-            ( show state.secondsLeft <> "s / "
-                <> show state.interval
-                <> "s"
+            ( if state.autoRefresh then
+                show state.secondsLeft <> "s / "
+                  <> show state.interval
+                  <> "s"
+              else show state.interval <> "s"
             )
         , HH.button
             [ HE.onClick \_ -> ChangeInterval 5
