@@ -20,7 +20,7 @@ import Data.Argonaut.Decode.Class
 import Data.Argonaut.Decode.Combinators ((.:), (.:?))
 import Data.Argonaut.Decode.Error (JsonDecodeError(..))
 import Data.Argonaut.Parser (jsonParser)
-import Data.Array (catMaybes)
+import Data.Array (all, any, catMaybes, null)
 import Data.Either (Either(..))
 import Data.Int (fromString) as Int
 import Data.Maybe (Maybe(..), isNothing)
@@ -238,7 +238,7 @@ fetchRepoPRs token fullName = do
     )
   pure $ map _.items result
 
--- | Fetch combined commit status for a SHA.
+-- | Fetch check-runs for a SHA, derive combined state.
 fetchCommitStatus
   :: String
   -> String
@@ -250,11 +250,36 @@ fetchCommitStatus token fullName sha = do
         <> fullName
         <> "/commits/"
         <> sha
-        <> "/status"
+        <> "/check-runs"
     )
   pure $ result >>= \r ->
     case toObject r.json of
       Nothing -> Left "Expected object"
-      Just obj -> case obj .: "state" of
-        Left err -> Left (show err)
-        Right st -> Right st
+      Just obj ->
+        case decodeJson r.json of
+          Left err -> Left (show err)
+          Right
+            ( res
+                :: { check_runs ::
+                       Array
+                         { status :: String
+                         , conclusion :: Maybe String
+                         }
+                   }
+            ) -> Right
+            (combineCheckRuns res.check_runs)
+
+-- | Derive combined state from check runs.
+combineCheckRuns
+  :: Array { status :: String, conclusion :: Maybe String }
+  -> String
+combineCheckRuns runs
+  | null runs = "unknown"
+  | any (\r -> r.status /= "completed") runs = "pending"
+  | any (\r -> r.conclusion == Just "failure") runs =
+      "failure"
+  | any (\r -> r.conclusion == Just "cancelled") runs =
+      "cancelled"
+  | all (\r -> r.conclusion == Just "success") runs =
+      "success"
+  | otherwise = "mixed"
