@@ -25,7 +25,7 @@ import Types (Assignee, Issue(..), Label, PullRequest(..), Repo(..), RepoDetail)
 foreign import parseMarkdownImpl :: String -> String
 
 -- | Sort fields for the repo table.
-data SortField = SortName | SortUpdated | SortIssues
+data SortField = SortName | SortUpdated | SortIssues | SortCustom
 
 derive instance Eq SortField
 
@@ -47,6 +47,8 @@ data Action
   | SetFilter String
   | ChangeInterval Int
   | ToggleAutoRefresh
+  | MoveUp String
+  | MoveDown String
   | ResetAll
 
 -- | Application state (referenced by view).
@@ -67,6 +69,7 @@ type State =
   , hasToken :: Boolean
   , expandedItems :: Set String
   , autoRefresh :: Boolean
+  , customOrder :: Array String
   }
 
 -- | Token input form shown when no token is set.
@@ -210,6 +213,19 @@ renderToolbar state =
             )
         ]
         [ HH.text "Issues" ]
+    , HH.button
+        [ HE.onClick \_ -> SetSort SortCustom
+        , HP.class_
+            ( HH.ClassName
+                ( "btn-small"
+                    <> activeIf
+                      ( state.sortField
+                          == SortCustom
+                      )
+                )
+            )
+        ]
+        [ HH.text "Custom" ]
     , HH.input
         [ HP.placeholder "Filter repos..."
         , HP.value state.filterText
@@ -363,7 +379,26 @@ renderRepoRow state (Repo r) =
                 [ HH.text (formatDate r.updatedAt) ]
             ]
         , HH.td_
-            [ linkButton r.htmlUrl ]
+            ( ( if state.sortField == SortCustom then
+                  [ HH.span
+                      [ HP.class_
+                          (HH.ClassName "move-btn")
+                      , HE.onClick \_ -> MoveUp
+                          r.fullName
+                      ]
+                      [ HH.text "\x25B2" ]
+                  , HH.span
+                      [ HP.class_
+                          (HH.ClassName "move-btn")
+                      , HE.onClick \_ -> MoveDown
+                          r.fullName
+                      ]
+                      [ HH.text "\x25BC" ]
+                  ]
+                else []
+              )
+                <> [ linkButton r.htmlUrl ]
+            )
         ]
     ]
       <>

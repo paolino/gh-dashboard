@@ -2,12 +2,19 @@ module Main where
 
 import Prelude
 
-import Data.Array (filter, length, sortBy)
+import Data.Array (filter, findIndex, length, sortBy, (!!))
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
 import Data.Ordering (invert)
 import Data.String (Pattern(..), contains, toLower)
+import Data.Argonaut.Core (stringify)
+import Data.Argonaut.Decode.Class (decodeJson)
+import Data.Argonaut.Decode.Error (printJsonDecodeError)
+import Data.Argonaut.Encode.Class (encodeJson)
+import Data.Argonaut.Parser (jsonParser)
+import Data.Bifunctor (lmap)
 import Effect (Effect)
 import Effect.Aff (Aff, Milliseconds(..), delay)
 import Effect.Aff as Aff
@@ -72,6 +79,7 @@ initialState =
   , hasToken: false
   , expandedItems: Set.empty
   , autoRefresh: true
+  , customOrder: []
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -112,6 +120,9 @@ applySort state = sortBy comparator
     SortIssues -> compare
       a.openIssuesCount
       b.openIssuesCount
+    SortCustom -> compare
+      (orderIndex state.customOrder a.fullName)
+      (orderIndex state.customOrder b.fullName)
 
 handleAction
   :: forall o
@@ -120,6 +131,8 @@ handleAction
 handleAction = case _ of
   Initialize -> do
     saved <- liftEffect loadToken
+    order <- liftEffect loadOrder
+    H.modify_ _ { customOrder = order }
     case saved of
       "" -> pure unit
       tok -> do
@@ -215,6 +228,29 @@ handleAction = case _ of
       , secondsLeft = min st.secondsLeft
           newInterval
       }
+  MoveUp fullName -> do
+    st <- H.get
+    let
+      order = ensureOrder st
+    case findIndex (_ == fullName) order of
+      Just idx | idx > 0 -> do
+        let newOrder = swapAt (idx - 1) idx order
+        H.modify_ _ { customOrder = newOrder }
+        liftEffect $ saveOrder newOrder
+      _ -> pure unit
+  MoveDown fullName -> do
+    st <- H.get
+    let
+      order = ensureOrder st
+    case findIndex (_ == fullName) order of
+      Just idx
+        | idx < Array.length order - 1 -> do
+            let
+              newOrder = swapAt idx (idx + 1) order
+            H.modify_ _
+              { customOrder = newOrder }
+            liftEffect $ saveOrder newOrder
+      _ -> pure unit
   ResetAll -> do
     ok <- liftEffect do
       w <- window
@@ -222,6 +258,20 @@ handleAction = case _ of
     when ok do
       liftEffect clearToken
       H.modify_ _ { token = "", hasToken = false, repos = [], expanded = Nothing, details = Nothing, error = Nothing, loading = false }
+
+-- | Ensure custom order contains all current repos.
+ensureOrder :: State -> Array String
+ensureOrder st =
+  let
+    repoNames = map (\(Repo r) -> r.fullName) st.repos
+    existing = filter
+      (\n -> Array.elem n repoNames)
+      st.customOrder
+    missing = filter
+      (\n -> not (Array.elem n existing))
+      repoNames
+  in
+    existing <> missing
 
 flipDir :: SortDir -> SortDir
 flipDir Asc = Desc
@@ -308,3 +358,38 @@ clearToken = do
   w <- window
   s <- localStorage w
   Storage.removeItem storageKeyToken s
+
+storageKeyOrder :: String
+storageKeyOrder = "gh-dashboard-order"
+
+loadOrder :: Effect (Array String)
+loadOrder = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeyOrder s
+  pure $ case raw of
+    Nothing -> []
+    Just str -> case jsonParser str >>= (lmap printJsonDecodeError <<< decodeJson) of
+      Right arr -> arr
+      Left _ -> []
+
+saveOrder :: Array String -> Effect Unit
+saveOrder order = do
+  w <- window
+  s <- localStorage w
+  Storage.setItem storageKeyOrder
+    (stringify (encodeJson order))
+    s
+
+orderIndex :: Array String -> String -> Int
+orderIndex order name =
+  fromMaybe 999999 (findIndex (_ == name) order)
+
+swapAt :: Int -> Int -> Array String -> Array String
+swapAt i j arr = case arr !! i, arr !! j of
+  Just a, Just b ->
+    fromMaybe arr
+      ( Array.updateAt i b arr
+          >>= Array.updateAt j a
+      )
+  _, _ -> arr
