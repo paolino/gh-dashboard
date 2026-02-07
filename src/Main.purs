@@ -29,12 +29,15 @@ import GitHub
 import Halogen as H
 import Halogen.Aff as HA
 import Halogen.VDom.Driver (runUI)
+import FFI.Theme (setBodyTheme)
 import Storage
   ( clearAll
   , loadHidden
   , loadRepoList
+  , loadTheme
   , loadToken
   , saveRepoList
+  , saveTheme
   , saveToken
   , saveHidden
   )
@@ -78,6 +81,7 @@ initialState =
   , dragging: Nothing
   , showAddRepo: false
   , addRepoInput: ""
+  , darkTheme: true
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -112,9 +116,12 @@ handleAction = case _ of
     saved <- liftEffect loadToken
     repoList <- liftEffect loadRepoList
     hidden <- liftEffect loadHidden
+    dark <- liftEffect loadTheme
+    liftEffect $ setBodyTheme dark
     H.modify_ _
       { repoList = repoList
       , hiddenItems = hidden
+      , darkTheme = dark
       }
     case saved of
       "" -> pure unit
@@ -404,12 +411,21 @@ handleAction = case _ of
         else Set.insert url st.hiddenItems
     H.modify_ _ { hiddenItems = newHidden }
     liftEffect $ saveHidden newHidden
+  ToggleTheme -> do
+    st <- H.get
+    let dark = not st.darkTheme
+    H.modify_ _ { darkTheme = dark }
+    liftEffect do
+      saveTheme dark
+      setBodyTheme dark
   ResetAll -> do
     ok <- liftEffect do
       w <- window
       confirm "Reset all saved data?" w
     when ok do
-      liftEffect clearAll
+      liftEffect do
+        clearAll
+        setBodyTheme true
       H.modify_ _
         { token = ""
         , hasToken = false
@@ -420,6 +436,7 @@ handleAction = case _ of
         , details = Nothing
         , error = Nothing
         , loading = false
+        , darkTheme = true
         }
 
 -- | Extract owner/repo from a GitHub URL or plain name.

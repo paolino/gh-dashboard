@@ -6,6 +6,8 @@ module Storage
   , saveRepoList
   , loadHidden
   , saveHidden
+  , loadTheme
+  , saveTheme
   , clearAll
   ) where
 
@@ -33,6 +35,9 @@ storageKeyRepos = "gh-dashboard-repos"
 
 storageKeyHidden :: String
 storageKeyHidden = "gh-dashboard-hidden"
+
+storageKeyTheme :: String
+storageKeyTheme = "gh-dashboard-dark-theme"
 
 loadToken :: Effect String
 loadToken = do
@@ -69,6 +74,21 @@ saveRepoList repos = do
     (stringify (encodeJson repos))
     s
 
+loadTheme :: Effect Boolean
+loadTheme = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeyTheme s
+  pure $ case raw of
+    Just "false" -> false
+    _ -> true
+
+saveTheme :: Boolean -> Effect Unit
+saveTheme dark = do
+  w <- window
+  s <- localStorage w
+  Storage.setItem storageKeyTheme (show dark) s
+
 clearAll :: Effect Unit
 clearAll = do
   w <- window
@@ -76,6 +96,7 @@ clearAll = do
   Storage.removeItem storageKeyToken s
   Storage.removeItem storageKeyRepos s
   Storage.removeItem storageKeyHidden s
+  Storage.removeItem storageKeyTheme s
 
 loadHidden :: Effect (Set.Set String)
 loadHidden = do
