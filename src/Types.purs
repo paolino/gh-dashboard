@@ -71,6 +71,7 @@ newtype Issue = Issue
   , createdAt :: String
   , userLogin :: String
   , labels :: Array Label
+  , body :: Maybe String
   }
 
 instance DecodeJson Issue where
@@ -84,6 +85,7 @@ instance DecodeJson Issue where
       userObj <- obj .: "user"
       userLogin_ <- userObj .: "login"
       labels_ <- obj .: "labels"
+      body_ <- obj .:? "body"
       pure $ Issue
         { number: number_
         , title: title_
@@ -91,6 +93,7 @@ instance DecodeJson Issue where
         , createdAt: createdAt_
         , userLogin: userLogin_
         , labels: labels_
+        , body: body_
         }
 
 -- | An open pull request.
@@ -102,6 +105,7 @@ newtype PullRequest = PullRequest
   , userLogin :: String
   , draft :: Boolean
   , labels :: Array Label
+  , body :: Maybe String
   }
 
 instance DecodeJson PullRequest where
@@ -116,6 +120,7 @@ instance DecodeJson PullRequest where
       userLogin_ <- userObj .: "login"
       draft_ <- obj .: "draft"
       labels_ <- obj .: "labels"
+      body_ <- obj .:? "body"
       pure $ PullRequest
         { number: number_
         , title: title_
@@ -124,6 +129,7 @@ instance DecodeJson PullRequest where
         , userLogin: userLogin_
         , draft: draft_
         , labels: labels_
+        , body: body_
         }
 
 -- | Cached detail for an expanded repo.

@@ -12,12 +12,17 @@ import Prelude
 
 import Data.Array (null)
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Set (Set)
+import Data.Set as Set
 import Data.String (take)
 import GitHub (RateLimit)
 import Halogen.HTML as HH
+import Halogen.HTML.Core (PropName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Types (Issue(..), Label, PullRequest(..), Repo(..), RepoDetail)
+
+foreign import parseMarkdownImpl :: String -> String
 
 -- | Sort fields for the repo table.
 data SortField = SortName | SortUpdated | SortIssues
@@ -37,6 +42,7 @@ data Action
   | SubmitToken
   | Refresh
   | ToggleExpand String
+  | ToggleItem String
   | SetSort SortField
   | SetFilter String
   | ChangeInterval Int
@@ -58,6 +64,7 @@ type State =
   , sortDir :: SortDir
   , filterText :: String
   , hasToken :: Boolean
+  , expandedItems :: Set String
   }
 
 -- | Token input form shown when no token is set.
@@ -396,10 +403,10 @@ renderDetailPanel state =
                 [ HH.text "Loading..." ]
             Just detail ->
               HH.div_
-                [ renderIssuesSection
+                [ renderIssuesSection state
                     detail.issues
                     detail.issueCount
-                , renderPRsSection
+                , renderPRsSection state
                     detail.pullRequests
                     detail.prCount
                 ]
@@ -408,11 +415,12 @@ renderDetailPanel state =
 
 -- | Issues sub-section.
 renderIssuesSection
-  :: forall w i
-   . Array Issue
+  :: forall w
+   . State
+  -> Array Issue
   -> Int
-  -> HH.HTML w i
-renderIssuesSection issues count =
+  -> HH.HTML w Action
+renderIssuesSection state issues count =
   HH.div
     [ HP.class_ (HH.ClassName "detail-section") ]
     [ HH.div
@@ -432,50 +440,72 @@ renderIssuesSection issues count =
               (HH.ClassName "detail-table")
           ]
           [ HH.tbody_
-              (map renderIssueRow issues)
+              ( issues >>= renderIssueRow state
+              )
           ]
     ]
 
--- | Single issue row.
+-- | Single issue row + optional body row.
 renderIssueRow
-  :: forall w i. Issue -> HH.HTML w i
-renderIssueRow (Issue i) =
-  HH.tr_
-    [ HH.td_
-        [ HH.a
-            [ HP.href i.htmlUrl
-            , HP.target "_blank"
-            , HP.class_
-                (HH.ClassName "detail-link")
-            ]
-            [ HH.text
-                ("#" <> show i.number <> " " <> i.title)
-            ]
-        , renderLabels i.labels
+  :: forall w
+   . State
+  -> Issue
+  -> Array (HH.HTML w Action)
+renderIssueRow state (Issue i) =
+  let
+    key = "issue-" <> show i.number
+    isOpen = Set.member key state.expandedItems
+  in
+    [ HH.tr
+        [ HE.onClick \_ -> ToggleItem key
+        , HP.class_ (HH.ClassName "repo-row")
         ]
-    , HH.td_
-        [ HH.span
-            [ HP.class_
-                (HH.ClassName "detail-author")
+        [ HH.td_
+            [ HH.a
+                [ HP.href i.htmlUrl
+                , HP.target "_blank"
+                , HP.class_
+                    (HH.ClassName "detail-link")
+                ]
+                [ HH.text
+                    ( "#" <> show i.number
+                        <> " "
+                        <> i.title
+                    )
+                ]
+            , renderLabels i.labels
             ]
-            [ HH.text i.userLogin ]
-        ]
-    , HH.td_
-        [ HH.span
-            [ HP.class_
-                (HH.ClassName "detail-date")
+        , HH.td_
+            [ HH.span
+                [ HP.class_
+                    (HH.ClassName "detail-author")
+                ]
+                [ HH.text i.userLogin ]
             ]
-            [ HH.text (formatDate i.createdAt) ]
+        , HH.td_
+            [ HH.span
+                [ HP.class_
+                    (HH.ClassName "detail-date")
+                ]
+                [ HH.text
+                    (formatDate i.createdAt)
+                ]
+            ]
         ]
     ]
+      <>
+        if isOpen then
+          renderMarkdownRow i.body
+        else []
 
 -- | PRs sub-section.
 renderPRsSection
-  :: forall w i
-   . Array PullRequest
+  :: forall w
+   . State
+  -> Array PullRequest
   -> Int
-  -> HH.HTML w i
-renderPRsSection prs count =
+  -> HH.HTML w Action
+renderPRsSection state prs count =
   HH.div
     [ HP.class_ (HH.ClassName "detail-section") ]
     [ HH.div
@@ -494,53 +524,100 @@ renderPRsSection prs count =
           [ HP.class_
               (HH.ClassName "detail-table")
           ]
-          [ HH.tbody_ (map renderPRRow prs) ]
+          [ HH.tbody_
+              (prs >>= renderPRRow state)
+          ]
     ]
 
--- | Single PR row.
+-- | Single PR row + optional body row.
 renderPRRow
-  :: forall w i. PullRequest -> HH.HTML w i
-renderPRRow (PullRequest pr) =
-  HH.tr_
-    [ HH.td_
-        ( [ HH.a
-              [ HP.href pr.htmlUrl
-              , HP.target "_blank"
-              , HP.class_
-                  (HH.ClassName "detail-link")
-              ]
-              [ HH.text
-                  ( "#" <> show pr.number <> " "
-                      <> pr.title
-                  )
-              ]
-          , renderLabels pr.labels
-          ]
-            <>
-              if pr.draft then
-                [ HH.span
-                    [ HP.class_
-                        ( HH.ClassName
-                            "label-tag draft-tag"
-                        )
-                    ]
-                    [ HH.text "draft" ]
-                ]
-              else []
-        )
-    , HH.td_
-        [ HH.span
-            [ HP.class_
-                (HH.ClassName "detail-author")
-            ]
-            [ HH.text pr.userLogin ]
+  :: forall w
+   . State
+  -> PullRequest
+  -> Array (HH.HTML w Action)
+renderPRRow state (PullRequest pr) =
+  let
+    key = "pr-" <> show pr.number
+    isOpen = Set.member key state.expandedItems
+  in
+    [ HH.tr
+        [ HE.onClick \_ -> ToggleItem key
+        , HP.class_ (HH.ClassName "repo-row")
         ]
-    , HH.td_
-        [ HH.span
-            [ HP.class_
-                (HH.ClassName "detail-date")
+        [ HH.td_
+            ( [ HH.a
+                  [ HP.href pr.htmlUrl
+                  , HP.target "_blank"
+                  , HP.class_
+                      (HH.ClassName "detail-link")
+                  ]
+                  [ HH.text
+                      ( "#" <> show pr.number
+                          <> " "
+                          <> pr.title
+                      )
+                  ]
+              , renderLabels pr.labels
+              ]
+                <>
+                  if pr.draft then
+                    [ HH.span
+                        [ HP.class_
+                            ( HH.ClassName
+                                "label-tag draft-tag"
+                            )
+                        ]
+                        [ HH.text "draft" ]
+                    ]
+                  else []
+            )
+        , HH.td_
+            [ HH.span
+                [ HP.class_
+                    (HH.ClassName "detail-author")
+                ]
+                [ HH.text pr.userLogin ]
             ]
-            [ HH.text (formatDate pr.createdAt) ]
+        , HH.td_
+            [ HH.span
+                [ HP.class_
+                    (HH.ClassName "detail-date")
+                ]
+                [ HH.text
+                    (formatDate pr.createdAt)
+                ]
+            ]
+        ]
+    ]
+      <>
+        if isOpen then
+          renderMarkdownRow pr.body
+        else []
+
+-- | Row with markdown-rendered body.
+renderMarkdownRow
+  :: forall w i
+   . Maybe String
+  -> Array (HH.HTML w i)
+renderMarkdownRow = case _ of
+  Nothing -> []
+  Just "" -> []
+  Just body ->
+    [ HH.tr
+        [ HP.class_ (HH.ClassName "detail-row") ]
+        [ HH.td
+            [ HP.colSpan 3 ]
+            [ HH.div
+                [ HP.class_
+                    (HH.ClassName "detail-body")
+                , HP.prop
+                    ( PropName "innerHTML"
+                        :: PropName String
+                    )
+                    (parseMarkdownImpl body)
+                ]
+                []
+            ]
         ]
     ]
 

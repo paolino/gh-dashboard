@@ -4,8 +4,8 @@ import Prelude
 
 import Data.Array (filter, length, sortBy)
 import Data.Either (Either(..))
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Set as Set
 import Data.Ordering (invert)
 import Data.String (Pattern(..), contains, toLower)
 import Effect (Effect)
@@ -21,7 +21,7 @@ import Halogen as H
 import Halogen.Aff as HA
 import Halogen.Subscription as HS
 import Halogen.VDom.Driver (runUI)
-import Types (Repo(..), RepoDetail)
+import Types (Repo(..))
 import View
   ( Action(..)
   , SortDir(..)
@@ -70,6 +70,7 @@ initialState =
   , sortDir: Desc
   , filterText: ""
   , hasToken: false
+  , expandedItems: Set.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -110,11 +111,6 @@ applySort state = sortBy comparator
     SortIssues -> compare
       a.openIssuesCount
       b.openIssuesCount
-
-type InternalState =
-  { tickSub :: Maybe H.SubscriptionId
-  , detailCache :: Map.Map String RepoDetail
-  }
 
 handleAction
   :: forall o
@@ -173,14 +169,24 @@ handleAction = case _ of
         { expanded = Nothing
         , details = Nothing
         , detailLoading = false
+        , expandedItems = Set.empty
         }
     else do
       H.modify_ _
         { expanded = Just fullName
         , detailLoading = true
         , details = Nothing
+        , expandedItems = Set.empty
         }
       fetchDetail st.token fullName
+  ToggleItem key -> do
+    st <- H.get
+    H.modify_ _
+      { expandedItems =
+          if Set.member key st.expandedItems then
+            Set.delete key st.expandedItems
+          else Set.insert key st.expandedItems
+      }
   SetSort field -> do
     st <- H.get
     if st.sortField == field then
