@@ -7,6 +7,7 @@ module GitHub
   , fetchRepoIssues
   , fetchRepoPRs
   , fetchRepo
+  , fetchCommitStatus
   ) where
 
 import Prelude
@@ -16,7 +17,7 @@ import Data.Argonaut.Decode.Class
   ( class DecodeJson
   , decodeJson
   )
-import Data.Argonaut.Decode.Combinators ((.:?))
+import Data.Argonaut.Decode.Combinators ((.:), (.:?))
 import Data.Argonaut.Decode.Error (JsonDecodeError(..))
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (catMaybes)
@@ -236,3 +237,24 @@ fetchRepoPRs token fullName = do
         <> "/pulls?state=open&per_page=100"
     )
   pure $ map _.items result
+
+-- | Fetch combined commit status for a SHA.
+fetchCommitStatus
+  :: String
+  -> String
+  -> String
+  -> Aff (Either String String)
+fetchCommitStatus token fullName sha = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+        <> "/commits/"
+        <> sha
+        <> "/status"
+    )
+  pure $ result >>= \r ->
+    case toObject r.json of
+      Nothing -> Left "Expected object"
+      Just obj -> case obj .: "state" of
+        Left err -> Left (show err)
+        Right st -> Right st

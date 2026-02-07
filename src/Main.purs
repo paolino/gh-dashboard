@@ -6,6 +6,8 @@ import Data.Array (filter, findIndex, length, null, take)
 import Data.Array as Array
 import Data.Traversable (traverse)
 import Data.Either (Either(..))
+import Data.Map as Map
+import Data.Tuple (Tuple(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
 import Data.String (Pattern(..), contains, toLower, trim)
@@ -24,6 +26,7 @@ import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import GitHub
   ( RateLimit
+  , fetchCommitStatus
   , fetchRepo
   , fetchRepoIssues
   , fetchRepoPRs
@@ -33,7 +36,7 @@ import Halogen as H
 import Halogen.Aff as HA
 import Halogen.Subscription as HS
 import Halogen.VDom.Driver (runUI)
-import Types (Repo(..))
+import Types (PullRequest(..), Repo(..))
 import View (Action(..), State, renderDashboard, renderTokenForm)
 import Web.HTML (window)
 import Web.HTML.Window (confirm, localStorage)
@@ -435,11 +438,25 @@ fetchDetail token fullName = do
       prs = case prsResult of
         Right ps -> ps
         Left _ -> []
+    statusResults <- H.liftAff $ traverse
+      ( \(PullRequest pr) -> do
+          res <- fetchCommitStatus token fullName
+            pr.headSha
+          pure $ Tuple pr.number
+            ( case res of
+                Right s -> s
+                Left _ -> "unknown"
+            )
+      )
+      prs
+    let
+      statuses = Map.fromFoldable statusResults
       detail =
         { issues
         , pullRequests: prs
         , issueCount: length issues
         , prCount: length prs
+        , prStatuses: statuses
         }
     H.modify_ _
       { details = Just detail

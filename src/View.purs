@@ -9,6 +9,7 @@ module View
 import Prelude
 
 import Data.Array (length, null, partition)
+import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set (Set)
 import Data.Set as Set
@@ -771,6 +772,8 @@ renderPRRow state isHidden (PullRequest pr) =
     prefix = if isHidden then "h-pr-" else "pr-"
     key = prefix <> show pr.number
     isOpen = Set.member key state.expandedItems
+    status = state.details >>= \d ->
+      Map.lookup pr.number d.prStatuses
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
@@ -790,16 +793,18 @@ renderPRRow state isHidden (PullRequest pr) =
               , renderLabels pr.labels
               ]
                 <>
-                  if pr.draft then
-                    [ HH.span
-                        [ HP.class_
-                            ( HH.ClassName
-                                "label-tag draft-tag"
-                            )
-                        ]
-                        [ HH.text "draft" ]
-                    ]
-                  else []
+                  ( if pr.draft then
+                      [ HH.span
+                          [ HP.class_
+                              ( HH.ClassName
+                                  "label-tag draft-tag"
+                              )
+                          ]
+                          [ HH.text "draft" ]
+                      ]
+                    else []
+                  )
+                <> [ statusBadge status ]
             )
         , HH.td_
             [ renderAssignees pr.assignees ]
@@ -856,6 +861,22 @@ renderMarkdownRow = case _ of
             ]
         ]
     ]
+
+-- | CI status badge for a PR.
+statusBadge
+  :: forall w i. Maybe String -> HH.HTML w i
+statusBadge = case _ of
+  Nothing -> HH.text ""
+  Just st ->
+    HH.span
+      [ HP.class_
+          ( HH.ClassName
+              ( "label-tag ci-badge ci-"
+                  <> st
+              )
+          )
+      ]
+      [ HH.text st ]
 
 -- | Small link button that opens a URL.
 linkButton :: forall w i. String -> HH.HTML w i
