@@ -26,7 +26,8 @@ import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import GitHub
   ( RateLimit
-  , fetchCommitStatus
+  , fetchCheckRuns
+  , fetchCommitStatuses
   , fetchRepo
   , fetchRepoIssues
   , fetchRepoPRs
@@ -444,25 +445,31 @@ fetchDetail token fullName = do
             not (Set.member p.htmlUrl st.hiddenItems)
         )
         prs
-    statusResults <- H.liftAff $ traverse
+    checkResults <- H.liftAff $ traverse
       ( \(PullRequest pr) -> do
-          res <- fetchCommitStatus token fullName
+          cr <- fetchCheckRuns token fullName
             pr.headSha
+          cs <- fetchCommitStatuses token fullName
+            pr.headSha
+          let
+            runs = case cr of
+              Right r -> r
+              Left _ -> []
+            statuses = case cs of
+              Right s -> s
+              Left _ -> []
           pure $ Tuple pr.number
-            ( case res of
-                Right s -> s
-                Left _ -> "unknown"
-            )
+            (runs <> statuses)
       )
       visiblePRs
     let
-      statuses = Map.fromFoldable statusResults
+      checks = Map.fromFoldable checkResults
       detail =
         { issues
         , pullRequests: prs
         , issueCount: length issues
         , prCount: length prs
-        , prStatuses: statuses
+        , prChecks: checks
         }
     H.modify_ _
       { details = Just detail

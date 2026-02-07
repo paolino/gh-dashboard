@@ -7,7 +7,8 @@ module GitHub
   , fetchRepoIssues
   , fetchRepoPRs
   , fetchRepo
-  , fetchCommitStatus
+  , fetchCheckRuns
+  , fetchCommitStatuses
   ) where
 
 import Prelude
@@ -17,19 +18,19 @@ import Data.Argonaut.Decode.Class
   ( class DecodeJson
   , decodeJson
   )
-import Data.Argonaut.Decode.Combinators ((.:), (.:?))
+import Data.Argonaut.Decode.Combinators ((.:?))
 import Data.Argonaut.Decode.Error (JsonDecodeError(..))
 import Data.Argonaut.Parser (jsonParser)
-import Data.Array (all, any, catMaybes, null)
+import Data.Array (catMaybes, nubByEq)
 import Data.Either (Either(..))
 import Data.Int (fromString) as Int
-import Data.Maybe (Maybe(..), isNothing)
+import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.String (Pattern(..), indexOf, drop, take)
 import Effect.Aff (Aff, try)
 import Effect.Exception (message)
 import Fetch (fetch)
 import Fetch.Internal.Headers as Headers
-import Types (Issue, PullRequest, Repo)
+import Types (CheckRun(..), Issue, PullRequest, Repo)
 
 -- | Rate limit info from GitHub response headers.
 type RateLimit =
@@ -238,13 +239,13 @@ fetchRepoPRs token fullName = do
     )
   pure $ map _.items result
 
--- | Fetch check-runs for a SHA, derive combined state.
-fetchCommitStatus
+-- | Fetch check-runs for a SHA.
+fetchCheckRuns
   :: String
   -> String
   -> String
-  -> Aff (Either String String)
-fetchCommitStatus token fullName sha = do
+  -> Aff (Either String (Array CheckRun))
+fetchCheckRuns token fullName sha = do
   result <- ghFetch token
     ( "https://api.github.com/repos/"
         <> fullName
@@ -253,33 +254,62 @@ fetchCommitStatus token fullName sha = do
         <> "/check-runs"
     )
   pure $ result >>= \r ->
-    case toObject r.json of
-      Nothing -> Left "Expected object"
-      Just obj ->
-        case decodeJson r.json of
-          Left err -> Left (show err)
-          Right
-            ( res
-                :: { check_runs ::
-                       Array
-                         { status :: String
-                         , conclusion :: Maybe String
-                         }
-                   }
-            ) -> Right
-            (combineCheckRuns res.check_runs)
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right
+        ( res
+            :: { check_runs ::
+                   Array CheckRun
+               }
+        ) -> Right res.check_runs
 
--- | Derive combined state from check runs.
-combineCheckRuns
-  :: Array { status :: String, conclusion :: Maybe String }
+-- | Fetch legacy commit statuses for a SHA, as CheckRun.
+fetchCommitStatuses
+  :: String
   -> String
-combineCheckRuns runs
-  | null runs = "unknown"
-  | any (\r -> r.status /= "completed") runs = "pending"
-  | any (\r -> r.conclusion == Just "failure") runs =
-      "failure"
-  | any (\r -> r.conclusion == Just "cancelled") runs =
-      "cancelled"
-  | all (\r -> r.conclusion == Just "success") runs =
-      "success"
-  | otherwise = "mixed"
+  -> String
+  -> Aff (Either String (Array CheckRun))
+fetchCommitStatuses token fullName sha = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+        <> "/commits/"
+        <> sha
+        <> "/statuses"
+    )
+  pure $ result >>= \r ->
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right
+        ( statuses
+            :: Array
+                 { state :: String
+                 , context :: String
+                 , target_url :: Maybe String
+                 }
+        ) ->
+        let
+          unique = nubByEq
+            (\a b -> a.context == b.context)
+            statuses
+        in
+          Right $ map toCheckRun unique
+  where
+  toCheckRun s
+    | s.state == "pending" = CheckRun
+        { name: s.context
+        , status: "in_progress"
+        , conclusion: Nothing
+        , htmlUrl: fromMaybe "" s.target_url
+        }
+    | otherwise = CheckRun
+        { name: s.context
+        , status: "completed"
+        , conclusion: Just
+            (mapState s.state)
+        , htmlUrl: fromMaybe "" s.target_url
+        }
+  mapState "success" = "success"
+  mapState "failure" = "failure"
+  mapState "error" = "failure"
+  mapState other = other
