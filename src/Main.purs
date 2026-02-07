@@ -438,6 +438,12 @@ fetchDetail token fullName = do
       prs = case prsResult of
         Right ps -> ps
         Left _ -> []
+    let
+      visiblePRs = filter
+        ( \(PullRequest p) ->
+            not (Set.member p.htmlUrl st.hiddenItems)
+        )
+        prs
     statusResults <- H.liftAff $ traverse
       ( \(PullRequest pr) -> do
           res <- fetchCommitStatus token fullName
@@ -448,7 +454,7 @@ fetchDetail token fullName = do
                 Left _ -> "unknown"
             )
       )
-      prs
+      visiblePRs
     let
       statuses = Map.fromFoldable statusResults
       detail =
