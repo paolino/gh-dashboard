@@ -15,7 +15,7 @@ import Data.Argonaut.Decode.Class (class DecodeJson)
 import Data.Argonaut.Decode.Combinators ((.:), (.:?))
 import Data.Argonaut.Decode.Error (JsonDecodeError(..))
 import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 
 -- | A label on an issue or PR.
 type Label =
@@ -92,7 +92,7 @@ instance DecodeJson Issue where
       userObj <- obj .: "user"
       userLogin_ <- userObj .: "login"
       labels_ <- obj .: "labels"
-      assignees_ <- obj .: "assignees"
+      assignees_ <- fromMaybe [] <$> obj .:? "assignees"
       body_ <- obj .:? "body"
       pure $ Issue
         { number: number_
@@ -130,7 +130,7 @@ instance DecodeJson PullRequest where
       userLogin_ <- userObj .: "login"
       draft_ <- obj .: "draft"
       labels_ <- obj .: "labels"
-      assignees_ <- obj .: "assignees"
+      assignees_ <- fromMaybe [] <$> obj .:? "assignees"
       body_ <- obj .:? "body"
       pure $ PullRequest
         { number: number_
