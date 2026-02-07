@@ -251,6 +251,12 @@ renderToolbar state =
             [ HH.text "+" ]
         , renderRateLimit state.rateLimit
         ]
+    , HH.a
+        [ HP.href "https://github.com"
+        , HP.target "_blank"
+        , HP.class_ (HH.ClassName "btn-small")
+        ]
+        [ HH.text "GitHub" ]
     , HH.button
         [ HE.onClick \_ -> ResetAll
         , HP.class_ (HH.ClassName "btn-small")
