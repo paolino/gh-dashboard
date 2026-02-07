@@ -26,6 +26,7 @@ Repository dashboard for GitHub — browse your repos, open issues and pull requ
 - **Dark / light theme** — toggle between dark and light themes; persisted in localStorage
 - **Tooltips** — hover any icon for a description of its action
 - **Rate limit display** — shows remaining GitHub API quota
+- **Import / export settings** — download all dashboard settings as JSON; import from file to restore (token excluded for security)
 - **Reset** — clears all saved data (token, repo list, hidden items, theme, filters)
 
 ## Stack
