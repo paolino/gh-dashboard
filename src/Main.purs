@@ -2,7 +2,7 @@ module Main where
 
 import Prelude
 
-import Data.Array (filter, findIndex, length, sortBy, (!!))
+import Data.Array (filter, findIndex, length, null, sortBy)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -80,6 +80,7 @@ initialState =
   , expandedItems: Set.empty
   , autoRefresh: true
   , customOrder: []
+  , dragging: Nothing
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -112,17 +113,19 @@ applySort state = sortBy comparator
   dir = case state.sortDir of
     Asc -> identity
     Desc -> invert
-  comparator (Repo a) (Repo b) = dir $ case state.sortField of
-    SortName -> compare
-      (toLower a.name)
-      (toLower b.name)
-    SortUpdated -> compare a.updatedAt b.updatedAt
-    SortIssues -> compare
-      a.openIssuesCount
-      b.openIssuesCount
+  comparator (Repo a) (Repo b) = case state.sortField of
     SortCustom -> compare
       (orderIndex state.customOrder a.fullName)
       (orderIndex state.customOrder b.fullName)
+    other -> dir $ case other of
+      SortName -> compare
+        (toLower a.name)
+        (toLower b.name)
+      SortUpdated -> compare a.updatedAt b.updatedAt
+      SortIssues -> compare
+        a.openIssuesCount
+        b.openIssuesCount
+      SortCustom -> EQ
 
 handleAction
   :: forall o
@@ -132,7 +135,8 @@ handleAction = case _ of
   Initialize -> do
     saved <- liftEffect loadToken
     order <- liftEffect loadOrder
-    H.modify_ _ { customOrder = order }
+    sortField <- liftEffect loadSort
+    H.modify_ _ { customOrder = order, sortField = sortField }
     case saved of
       "" -> pure unit
       tok -> do
@@ -206,7 +210,19 @@ handleAction = case _ of
     st <- H.get
     if st.sortField == field then
       H.modify_ _ { sortDir = flipDir st.sortDir }
-    else
+    else do
+      when (field == SortCustom) do
+        when (null st.customOrder) do
+          let
+            currentOrder = map
+              (\(Repo r) -> r.fullName)
+              ( applySort st
+                  (applyFilter st st.repos)
+              )
+          H.modify_ _
+            { customOrder = currentOrder }
+          liftEffect $ saveOrder currentOrder
+      liftEffect $ saveSort field
       H.modify_ _
         { sortField = field
         , sortDir = Desc
@@ -228,29 +244,21 @@ handleAction = case _ of
       , secondsLeft = min st.secondsLeft
           newInterval
       }
-  MoveUp fullName -> do
+  DragStart fullName ->
+    H.modify_ _ { dragging = Just fullName }
+  DragDrop targetName -> do
     st <- H.get
-    let
-      order = ensureOrder st
-    case findIndex (_ == fullName) order of
-      Just idx | idx > 0 -> do
-        let newOrder = swapAt (idx - 1) idx order
-        H.modify_ _ { customOrder = newOrder }
-        liftEffect $ saveOrder newOrder
-      _ -> pure unit
-  MoveDown fullName -> do
-    st <- H.get
-    let
-      order = ensureOrder st
-    case findIndex (_ == fullName) order of
-      Just idx
-        | idx < Array.length order - 1 -> do
-            let
-              newOrder = swapAt idx (idx + 1) order
-            H.modify_ _
-              { customOrder = newOrder }
-            liftEffect $ saveOrder newOrder
-      _ -> pure unit
+    case st.dragging of
+      Nothing -> pure unit
+      Just srcName -> do
+        H.modify_ _ { dragging = Nothing }
+        when (srcName /= targetName) do
+          let
+            order = ensureOrder st
+            newOrder = moveItem srcName targetName
+              order
+          H.modify_ _ { customOrder = newOrder }
+          liftEffect $ saveOrder newOrder
   ResetAll -> do
     ok <- liftEffect do
       w <- window
@@ -359,6 +367,34 @@ clearToken = do
   s <- localStorage w
   Storage.removeItem storageKeyToken s
 
+storageKeySort :: String
+storageKeySort = "gh-dashboard-sort"
+
+loadSort :: Effect SortField
+loadSort = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeySort s
+  pure $ case raw of
+    Just "name" -> SortName
+    Just "updated" -> SortUpdated
+    Just "issues" -> SortIssues
+    Just "custom" -> SortCustom
+    _ -> SortUpdated
+
+saveSort :: SortField -> Effect Unit
+saveSort field = do
+  w <- window
+  s <- localStorage w
+  Storage.setItem storageKeySort
+    ( case field of
+        SortName -> "name"
+        SortUpdated -> "updated"
+        SortIssues -> "issues"
+        SortCustom -> "custom"
+    )
+    s
+
 storageKeyOrder :: String
 storageKeyOrder = "gh-dashboard-order"
 
@@ -385,11 +421,13 @@ orderIndex :: Array String -> String -> Int
 orderIndex order name =
   fromMaybe 999999 (findIndex (_ == name) order)
 
-swapAt :: Int -> Int -> Array String -> Array String
-swapAt i j arr = case arr !! i, arr !! j of
-  Just a, Just b ->
-    fromMaybe arr
-      ( Array.updateAt i b arr
-          >>= Array.updateAt j a
-      )
-  _, _ -> arr
+moveItem :: String -> String -> Array String -> Array String
+moveItem src target order =
+  let
+    without = filter (_ /= src) order
+  in
+    case findIndex (_ == target) without of
+      Nothing -> order
+      Just idx ->
+        fromMaybe order
+          (Array.insertAt idx src without)

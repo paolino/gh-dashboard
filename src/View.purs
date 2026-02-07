@@ -17,7 +17,7 @@ import Data.Set as Set
 import Data.String (joinWith, take)
 import GitHub (RateLimit)
 import Halogen.HTML as HH
-import Halogen.HTML.Core (PropName(..))
+import Halogen.HTML.Core (AttrName(..), PropName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Types (Assignee, Issue(..), Label, PullRequest(..), Repo(..), RepoDetail)
@@ -47,8 +47,8 @@ data Action
   | SetFilter String
   | ChangeInterval Int
   | ToggleAutoRefresh
-  | MoveUp String
-  | MoveDown String
+  | DragStart String
+  | DragDrop String
   | ResetAll
 
 -- | Application state (referenced by view).
@@ -70,6 +70,7 @@ type State =
   , expandedItems :: Set String
   , autoRefresh :: Boolean
   , customOrder :: Array String
+  , dragging :: Maybe String
   }
 
 -- | Token input form shown when no token is set.
@@ -314,22 +315,34 @@ renderRepoTable
   -> Array Repo
   -> HH.HTML w Action
 renderRepoTable state repos =
-  HH.table
-    [ HP.class_ (HH.ClassName "repo-table") ]
-    [ HH.thead_
-        [ HH.tr_
-            [ HH.th_ [ HH.text "Repository" ]
-            , HH.th_ [ HH.text "Description" ]
-            , HH.th_ [ HH.text "Lang" ]
-            , HH.th_ [ HH.text "Vis" ]
-            , HH.th_ [ HH.text "Issues" ]
-            , HH.th_ [ HH.text "Updated" ]
-            , HH.th_ []
-            ]
-        ]
-    , HH.tbody_
-        (repos >>= \r -> renderRepoRow state r)
-    ]
+  let
+    isCustom = state.sortField == SortCustom
+  in
+    HH.table
+      [ HP.class_ (HH.ClassName "repo-table") ]
+      [ HH.thead_
+          [ HH.tr_
+              ( ( if isCustom then
+                    [ HH.th_ [] ]
+                  else []
+                )
+                  <>
+                    [ HH.th_
+                        [ HH.text "Repository" ]
+                    , HH.th_
+                        [ HH.text "Description" ]
+                    , HH.th_ [ HH.text "Lang" ]
+                    , HH.th_ [ HH.text "Vis" ]
+                    , HH.th_ [ HH.text "Issues" ]
+                    , HH.th_
+                        [ HH.text "Updated" ]
+                    , HH.th_ []
+                    ]
+              )
+          ]
+      , HH.tbody_
+          (repos >>= \r -> renderRepoRow state r)
+      ]
 
 -- | A single repo row, plus detail panel if expanded.
 renderRepoRow
@@ -343,63 +356,68 @@ renderRepoRow state (Repo r) =
     rowClass =
       if isExpanded then "repo-row expanded"
       else "repo-row"
+    isCustom = state.sortField == SortCustom
   in
     [ HH.tr
-        [ HE.onClick \_ -> ToggleExpand r.fullName
-        , HP.class_ (HH.ClassName rowClass)
-        ]
-        [ HH.td_
-            [ HH.span
-                [ HP.class_
-                    (HH.ClassName "repo-name")
+        ( [ HE.onClick \_ -> ToggleExpand r.fullName
+          , HP.class_ (HH.ClassName rowClass)
+          ]
+            <>
+              if isCustom then
+                [ HE.onDrop \_ -> DragDrop
+                    r.fullName
+                , HP.attr (AttrName "ondragover")
+                    "event.preventDefault()"
                 ]
-                [ HH.text r.name ]
-            ]
-        , HH.td_
-            [ HH.span
-                [ HP.class_
-                    (HH.ClassName "repo-desc")
-                ]
-                [ HH.text
-                    (fromMaybe "" r.description)
-                ]
-            ]
-        , HH.td_ [ renderLangBadge r.language ]
-        , HH.td_
-            [ renderVisBadge r.visibility ]
-        , HH.td_
-            [ renderCountBadge "badge-issues"
-                r.openIssuesCount
-            ]
-        , HH.td_
-            [ HH.span
-                [ HP.class_
-                    (HH.ClassName "repo-date")
-                ]
-                [ HH.text (formatDate r.updatedAt) ]
-            ]
-        , HH.td_
-            ( ( if state.sortField == SortCustom then
+              else []
+        )
+        ( ( if isCustom then
+              [ HH.td
+                  [ HP.class_
+                      (HH.ClassName "drag-handle")
+                  , HP.draggable true
+                  , HE.onDragStart \_ -> DragStart
+                      r.fullName
+                  ]
+                  [ HH.text "\x2630" ]
+              ]
+            else []
+          )
+            <>
+              [ HH.td_
                   [ HH.span
                       [ HP.class_
-                          (HH.ClassName "move-btn")
-                      , HE.onClick \_ -> MoveUp
-                          r.fullName
+                          (HH.ClassName "repo-name")
                       ]
-                      [ HH.text "\x25B2" ]
-                  , HH.span
-                      [ HP.class_
-                          (HH.ClassName "move-btn")
-                      , HE.onClick \_ -> MoveDown
-                          r.fullName
-                      ]
-                      [ HH.text "\x25BC" ]
+                      [ HH.text r.name ]
                   ]
-                else []
-              )
-                <> [ linkButton r.htmlUrl ]
-            )
-        ]
+              , HH.td_
+                  [ HH.span
+                      [ HP.class_
+                          (HH.ClassName "repo-desc")
+                      ]
+                      [ HH.text
+                          (fromMaybe "" r.description)
+                      ]
+                  ]
+              , HH.td_ [ renderLangBadge r.language ]
+              , HH.td_
+                  [ renderVisBadge r.visibility ]
+              , HH.td_
+                  [ renderCountBadge "badge-issues"
+                      r.openIssuesCount
+                  ]
+              , HH.td_
+                  [ HH.span
+                      [ HP.class_
+                          (HH.ClassName "repo-date")
+                      ]
+                      [ HH.text (formatDate r.updatedAt) ]
+                  ]
+              , HH.td_
+                  [ linkButton r.htmlUrl ]
+              ]
+        )
     ]
       <>
         if isExpanded then
@@ -456,7 +474,12 @@ renderDetailPanel state =
   HH.tr
     [ HP.class_ (HH.ClassName "detail-panel") ]
     [ HH.td
-        [ HP.colSpan 7 ]
+        [ HP.colSpan
+            ( if state.sortField == SortCustom then
+                8
+              else 7
+            )
+        ]
         [ if state.detailLoading then
             HH.div
               [ HP.class_
