@@ -275,6 +275,7 @@ renderRepoTable state repos =
             , HH.th_ [ HH.text "Vis" ]
             , HH.th_ [ HH.text "Issues" ]
             , HH.th_ [ HH.text "Updated" ]
+            , HH.th_ []
             ]
         ]
     , HH.tbody_
@@ -299,10 +300,8 @@ renderRepoRow state (Repo r) =
         , HP.class_ (HH.ClassName rowClass)
         ]
         [ HH.td_
-            [ HH.a
-                [ HP.href r.htmlUrl
-                , HP.target "_blank"
-                , HP.class_
+            [ HH.span
+                [ HP.class_
                     (HH.ClassName "repo-name")
                 ]
                 [ HH.text r.name ]
@@ -330,6 +329,8 @@ renderRepoRow state (Repo r) =
                 ]
                 [ HH.text (formatDate r.updatedAt) ]
             ]
+        , HH.td_
+            [ linkButton r.htmlUrl ]
         ]
     ]
       <>
@@ -387,7 +388,7 @@ renderDetailPanel state =
   HH.tr
     [ HP.class_ (HH.ClassName "detail-panel") ]
     [ HH.td
-        [ HP.colSpan 6 ]
+        [ HP.colSpan 7 ]
         [ if state.detailLoading then
             HH.div
               [ HP.class_
@@ -461,10 +462,8 @@ renderIssueRow state (Issue i) =
         , HP.class_ (HH.ClassName "repo-row")
         ]
         [ HH.td_
-            [ HH.a
-                [ HP.href i.htmlUrl
-                , HP.target "_blank"
-                , HP.class_
+            [ HH.span
+                [ HP.class_
                     (HH.ClassName "detail-link")
                 ]
                 [ HH.text
@@ -491,6 +490,8 @@ renderIssueRow state (Issue i) =
                     (formatDate i.createdAt)
                 ]
             ]
+        , HH.td_
+            [ linkButton i.htmlUrl ]
         ]
     ]
       <>
@@ -545,10 +546,8 @@ renderPRRow state (PullRequest pr) =
         , HP.class_ (HH.ClassName "repo-row")
         ]
         [ HH.td_
-            ( [ HH.a
-                  [ HP.href pr.htmlUrl
-                  , HP.target "_blank"
-                  , HP.class_
+            ( [ HH.span
+                  [ HP.class_
                       (HH.ClassName "detail-link")
                   ]
                   [ HH.text
@@ -587,6 +586,8 @@ renderPRRow state (PullRequest pr) =
                     (formatDate pr.createdAt)
                 ]
             ]
+        , HH.td_
+            [ linkButton pr.htmlUrl ]
         ]
     ]
       <>
@@ -606,7 +607,7 @@ renderMarkdownRow = case _ of
     [ HH.tr
         [ HP.class_ (HH.ClassName "detail-row") ]
         [ HH.td
-            [ HP.colSpan 3 ]
+            [ HP.colSpan 4 ]
             [ HH.div
                 [ HP.class_
                     (HH.ClassName "detail-body")
@@ -620,6 +621,16 @@ renderMarkdownRow = case _ of
             ]
         ]
     ]
+
+-- | Small link button that opens a URL.
+linkButton :: forall w i. String -> HH.HTML w i
+linkButton url =
+  HH.a
+    [ HP.href url
+    , HP.target "_blank"
+    , HP.class_ (HH.ClassName "link-btn")
+    ]
+    [ HH.text "\x2197" ]
 
 -- | Render label tags.
 renderLabels
