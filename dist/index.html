@@ -65,14 +65,43 @@
     .detail-labels { display: inline-flex; gap: 4px; margin-left: 8px; }
     .label-tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: #252542; color: #9e9e9e; }
     .draft-tag { background: #3e2723; color: #ffab91; }
+    .detail-body { color: #c0c0c0; font-size: 12px; padding: 6px 0 4px; line-height: 1.4; word-break: break-word; }
+    .detail-body p { margin: 2px 0; }
+    .detail-body code { background: #252542; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+    .detail-body pre { background: #252542; padding: 6px; border-radius: 4px; overflow-x: auto; font-size: 11px; margin: 4px 0; }
+    .detail-body pre code { background: none; padding: 0; }
+    .detail-body h1, .detail-body h2, .detail-body h3 { color: #e0e0e0; margin: 4px 0 2px; font-size: 13px; }
+    .detail-body ul, .detail-body ol { padding-left: 20px; margin: 2px 0; }
+    .detail-body li { margin-bottom: 1px; }
+    .detail-body a { color: #2196f3; }
+    .detail-body blockquote { border-left: 3px solid #333; padding-left: 12px; margin: 2px 0; color: #999; }
+    .detail-body img { max-width: 100%; }
+    .detail-row td { padding: 0 8px 8px !important; border-bottom: none !important; }
     .loading-spinner { color: #666; font-size: 13px; padding: 12px 0; }
     .empty-msg { color: #555; font-size: 13px; font-style: italic; }
     @keyframes pulse { 50% { opacity: 0.6; } }
     .loading { animation: pulse 1.5s ease-in-out infinite; }
+    @media (max-width: 640px) {
+      body { padding: 12px 8px; }
+      .form-container { margin-top: 40px; }
+      .toolbar { gap: 6px; }
+      .toolbar-timer { margin-left: 0; width: 100%; justify-content: flex-start; margin-top: 4px; }
+      .filter-input { width: 100%; box-sizing: border-box; }
+      .repo-table th:nth-child(2), .repo-table td:nth-child(2),
+      .repo-table th:nth-child(3), .repo-table td:nth-child(3),
+      .repo-table th:nth-child(4), .repo-table td:nth-child(4),
+      .repo-table th:nth-child(6), .repo-table td:nth-child(6) { display: none; }
+      .repo-row td { padding: 8px 6px; }
+      .repo-table th { padding: 6px; }
+      .detail-panel td { padding: 10px 6px; }
+      .detail-table td { padding: 4px 4px; font-size: 12px; }
+      .detail-body pre { font-size: 10px; }
+    }
   </style>
 </head>
 <body>
   <div id="app"></div>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="index.js"></script>
 </body>
 </html>
