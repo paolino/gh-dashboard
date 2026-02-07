@@ -11,15 +11,8 @@ import Data.Tuple (Tuple(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
 import Data.String (Pattern(..), contains, toLower, trim)
-import Data.String (split) as Str
+import Data.String (replaceAll, split) as Str
 import Data.String.Pattern (Replacement(..))
-import Data.String (replaceAll) as Str
-import Data.Argonaut.Core (stringify)
-import Data.Argonaut.Decode.Class (decodeJson)
-import Data.Argonaut.Decode.Error (printJsonDecodeError)
-import Data.Argonaut.Encode.Class (encodeJson)
-import Data.Argonaut.Parser (jsonParser)
-import Data.Bifunctor (lmap)
 import Effect (Effect)
 import Effect.Aff (Aff, Milliseconds(..), delay)
 import Effect.Aff as Aff
@@ -37,25 +30,24 @@ import Halogen as H
 import Halogen.Aff as HA
 import Halogen.Subscription as HS
 import Halogen.VDom.Driver (runUI)
+import Storage
+  ( clearAll
+  , loadHidden
+  , loadRepoList
+  , loadToken
+  , saveRepoList
+  , saveToken
+  , saveHidden
+  )
 import Types (PullRequest(..), Repo(..))
 import View (Action(..), State, renderDashboard, renderTokenForm)
 import Web.HTML (window)
-import Web.HTML.Window (confirm, localStorage)
-import Web.Storage.Storage as Storage
+import Web.HTML.Window (confirm)
 
 main :: Effect Unit
 main = HA.runHalogenAff do
   body <- HA.awaitBody
   runUI rootComponent unit body
-
-storageKeyToken :: String
-storageKeyToken = "gh-dashboard-token"
-
-storageKeyRepos :: String
-storageKeyRepos = "gh-dashboard-repos"
-
-storageKeyHidden :: String
-storageKeyHidden = "gh-dashboard-hidden"
 
 rootComponent
   :: forall q i o. H.Component q i o Aff
@@ -487,78 +479,6 @@ ticker ms = HS.makeEmitter \emit -> do
     delay (Milliseconds ms)
     liftEffect (emit Tick)
     loop emit
-
--- localStorage helpers
-
-loadToken :: Effect String
-loadToken = do
-  w <- window
-  s <- localStorage w
-  fromMaybe "" <$> Storage.getItem storageKeyToken s
-
-saveToken :: String -> Effect Unit
-saveToken tok = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeyToken tok s
-
-loadRepoList :: Effect (Array String)
-loadRepoList = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeyRepos s
-  pure $ case raw of
-    Nothing -> []
-    Just str ->
-      case
-        jsonParser str
-          >>= (lmap printJsonDecodeError <<< decodeJson)
-        of
-        Right arr -> arr
-        Left _ -> []
-
-saveRepoList :: Array String -> Effect Unit
-saveRepoList repos = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeyRepos
-    (stringify (encodeJson repos))
-    s
-
-clearAll :: Effect Unit
-clearAll = do
-  w <- window
-  s <- localStorage w
-  Storage.removeItem storageKeyToken s
-  Storage.removeItem storageKeyRepos s
-  Storage.removeItem storageKeyHidden s
-
-loadHidden :: Effect (Set.Set String)
-loadHidden = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeyHidden s
-  pure $ case raw of
-    Nothing -> Set.empty
-    Just str ->
-      case
-        jsonParser str
-          >>= (lmap printJsonDecodeError <<< decodeJson)
-        of
-        Right (arr :: Array String) ->
-          Set.fromFoldable arr
-        Left _ -> Set.empty
-
-saveHidden :: Set.Set String -> Effect Unit
-saveHidden hidden = do
-  w <- window
-  s <- localStorage w
-  let
-    arr :: Array String
-    arr = Set.toUnfoldable hidden
-  Storage.setItem storageKeyHidden
-    (stringify (encodeJson arr))
-    s
 
 moveItem :: String -> String -> Array String -> Array String
 moveItem src target order =
