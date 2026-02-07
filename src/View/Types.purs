@@ -29,6 +29,7 @@ data Action
   | SubmitAddRepo
   | RemoveRepo String
   | HideItem String
+  | ToggleTheme
   | ResetAll
 
 -- | Application state (referenced by view).
@@ -49,4 +50,5 @@ type State =
   , dragging :: Maybe String
   , showAddRepo :: Boolean
   , addRepoInput :: String
+  , darkTheme :: Boolean
   }

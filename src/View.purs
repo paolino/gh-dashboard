@@ -147,6 +147,20 @@ renderToolbar state =
         , HP.class_ (HH.ClassName "filter-input")
         ]
     , renderRateLimit state.rateLimit
+    , HH.button
+        [ HE.onClick \_ -> ToggleTheme
+        , HP.class_
+            ( HH.ClassName
+                ( "btn-back"
+                    <> activeIf state.darkTheme
+                )
+            )
+        ]
+        [ HH.text
+            ( if state.darkTheme then "\x263E"
+              else "\x2600"
+            )
+        ]
     , HH.div
         [ HP.class_
             (HH.ClassName "toolbar-spacer")
