@@ -49,6 +49,7 @@ storageKeyIssueLabels = "gh-dashboard-issue-labels"
 storageKeyPRLabels :: String
 storageKeyPRLabels = "gh-dashboard-pr-labels"
 
+
 loadToken :: Effect String
 loadToken = do
   w <- window
@@ -110,6 +111,7 @@ loadPRLabelFilters = loadStringSet storageKeyPRLabels
 
 savePRLabelFilters :: Set.Set String -> Effect Unit
 savePRLabelFilters = saveStringSet storageKeyPRLabels
+
 
 loadStringSet :: String -> Effect (Set.Set String)
 loadStringSet key = do

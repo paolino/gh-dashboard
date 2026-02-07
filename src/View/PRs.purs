@@ -28,14 +28,15 @@ import View.DetailWidgets
   , refreshButton
   , renderLabelSelector
   )
+import Halogen.HTML.Core (PropName(..))
 import View.Helpers
   ( detailHead
   , formatDate
   , linkButton
+  , parseMarkdownImpl
   , renderAssignees
   , renderAuthor
   , renderLabels
-  , renderMarkdownRow
   )
 import View.Types (Action(..), State)
 
@@ -279,9 +280,61 @@ renderPRRow state isHidden (PullRequest pr) =
     ]
       <>
         if isOpen then
-          renderMarkdownRow pr.body
-            <> renderCheckRuns state pr.number
-              checks
+          let
+            failed = failedChecks checks
+            hasChecks = not (null failed)
+          in
+            [ HH.tr
+                [ HP.class_
+                    (HH.ClassName "detail-row")
+                ]
+                [ HH.td
+                    [ HP.colSpan 6 ]
+                    [ HH.div
+                        [ HP.class_
+                            ( HH.ClassName
+                                "detail-split"
+                            )
+                        ]
+                        ( ( if hasChecks then
+                              [ HH.div
+                                  [ HP.class_
+                                      ( HH.ClassName
+                                          "detail-split-checks"
+                                      )
+                                  ]
+                                  [ HH.div
+                                      [ HP.class_
+                                          ( HH.ClassName
+                                              "split-header"
+                                          )
+                                      ]
+                                      [ HH.text
+                                          ( "Checks ("
+                                              <> show
+                                                (length failed)
+                                              <> ")"
+                                          )
+                                      ]
+                                  , HH.div
+                                      [ HP.class_
+                                          ( HH.ClassName
+                                              "check-runs"
+                                          )
+                                      ]
+                                      ( map renderCheckRun
+                                          failed
+                                      )
+                                  ]
+                              ]
+                            else []
+                          )
+                            <> renderMarkdownBody
+                              pr.body
+                        )
+                    ]
+                ]
+            ]
         else []
 
 -- | Derive combined state from check runs.
@@ -321,64 +374,41 @@ statusBadge (Just _) combined =
     ]
     [ HH.text combined ]
 
--- | Render non-success check runs as collapsible section.
-renderCheckRuns
-  :: forall w
-   . State
-  -> Int
-  -> Maybe (Array CheckRun)
-  -> Array (HH.HTML w Action)
-renderCheckRuns _ _ Nothing = []
-renderCheckRuns state prNum (Just runs) =
-  let
-    failed = filter
-      ( \(CheckRun r) ->
-          r.conclusion /= Just "success"
-      )
-      runs
-    key = "checks-" <> show prNum
-    isOpen = Set.member key state.expandedItems
-  in
-    if null failed then []
-    else
-      [ HH.tr
-          [ HP.class_ (HH.ClassName "detail-row") ]
-          [ HH.td
-              [ HP.colSpan 6
-              , HP.class_
-                  ( HH.ClassName
-                      "hidden-separator clickable"
-                  )
-              , HE.onClick \_ -> ToggleItem key
-              ]
-              [ HH.text
-                  ( ( if isOpen then "\x25BE "
-                      else "\x25B8 "
-                    )
-                      <> "Checks ("
-                      <> show (length failed)
-                      <> ")"
-                  )
-              ]
-          ]
-      ]
-        <>
-          if isOpen then
-            [ HH.tr
-                [ HP.class_
-                    (HH.ClassName "detail-row")
-                ]
-                [ HH.td
-                    [ HP.colSpan 6 ]
-                    [ HH.div
-                        [ HP.class_
-                            (HH.ClassName "check-runs")
-                        ]
-                        (map renderCheckRun failed)
-                    ]
-                ]
+-- | Extract non-success check runs.
+failedChecks
+  :: Maybe (Array CheckRun) -> Array CheckRun
+failedChecks Nothing = []
+failedChecks (Just runs) = filter
+  ( \(CheckRun r) ->
+      r.conclusion /= Just "success"
+  )
+  runs
+
+-- | Render markdown body as div(s) for side-by-side layout.
+renderMarkdownBody
+  :: forall w i
+   . Maybe String
+  -> Array (HH.HTML w i)
+renderMarkdownBody = case _ of
+  Nothing -> []
+  Just "" -> []
+  Just body ->
+    [ HH.div
+        [ HP.class_
+            (HH.ClassName "detail-split-desc")
+        ]
+        [ HH.div
+            [ HP.class_
+                (HH.ClassName "detail-body")
+            , HP.prop
+                ( PropName "innerHTML"
+                    :: PropName String
+                )
+                (parseMarkdownImpl body)
             ]
-          else []
+            []
+        ]
+    ]
 
 -- | Render a single check run.
 renderCheckRun :: forall w i. CheckRun -> HH.HTML w i
