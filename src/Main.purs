@@ -2,14 +2,14 @@ module Main where
 
 import Prelude
 
-import Data.Array (filter, findIndex, length, null, sortBy)
+import Data.Array (filter, findIndex, length, null, take)
 import Data.Array as Array
 import Data.Traversable (traverse)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
-import Data.Ordering (invert)
-import Data.String (Pattern(..), contains, split, toLower, trim)
+import Data.String (Pattern(..), contains, toLower, trim)
+import Data.String (split) as Str
 import Data.String.Pattern (Replacement(..))
 import Data.String (replaceAll) as Str
 import Data.Argonaut.Core (stringify)
@@ -23,7 +23,8 @@ import Effect.Aff (Aff, Milliseconds(..), delay)
 import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import GitHub
-  ( fetchRepo
+  ( RateLimit
+  , fetchRepo
   , fetchRepoIssues
   , fetchRepoPRs
   , fetchUserRepos
@@ -33,14 +34,7 @@ import Halogen.Aff as HA
 import Halogen.Subscription as HS
 import Halogen.VDom.Driver (runUI)
 import Types (Repo(..))
-import View
-  ( Action(..)
-  , SortDir(..)
-  , SortField(..)
-  , State
-  , renderDashboard
-  , renderTokenForm
-  )
+import View (Action(..), State, renderDashboard, renderTokenForm)
 import Web.HTML (window)
 import Web.HTML.Window (confirm, localStorage)
 import Web.Storage.Storage as Storage
@@ -52,6 +46,9 @@ main = HA.runHalogenAff do
 
 storageKeyToken :: String
 storageKeyToken = "gh-dashboard-token"
+
+storageKeyRepos :: String
+storageKeyRepos = "gh-dashboard-repos"
 
 rootComponent
   :: forall q i o. H.Component q i o Aff
@@ -77,13 +74,11 @@ initialState =
   , rateLimit: Nothing
   , interval: 60
   , secondsLeft: 60
-  , sortField: SortUpdated
-  , sortDir: Desc
   , filterText: ""
   , hasToken: false
   , expandedItems: Set.empty
   , autoRefresh: true
-  , customOrder: []
+  , repoList: []
   , dragging: Nothing
   , showAddRepo: false
   , addRepoInput: ""
@@ -92,7 +87,7 @@ initialState =
 render :: forall m. State -> H.ComponentHTML Action () m
 render state =
   if state.hasToken then
-    renderDashboard state (applySort state (applyFilter state state.repos))
+    renderDashboard state (applyFilter state state.repos)
   else
     renderTokenForm state
 
@@ -112,27 +107,6 @@ applyFilter state repos
           )
           repos
 
--- | Sort repos by selected field.
-applySort :: State -> Array Repo -> Array Repo
-applySort state = sortBy comparator
-  where
-  dir = case state.sortDir of
-    Asc -> identity
-    Desc -> invert
-  comparator (Repo a) (Repo b) = case state.sortField of
-    SortCustom -> compare
-      (orderIndex state.customOrder a.fullName)
-      (orderIndex state.customOrder b.fullName)
-    other -> dir $ case other of
-      SortName -> compare
-        (toLower a.name)
-        (toLower b.name)
-      SortUpdated -> compare a.updatedAt b.updatedAt
-      SortIssues -> compare
-        a.openIssuesCount
-        b.openIssuesCount
-      SortCustom -> EQ
-
 handleAction
   :: forall o
    . Action
@@ -140,9 +114,8 @@ handleAction
 handleAction = case _ of
   Initialize -> do
     saved <- liftEffect loadToken
-    order <- liftEffect loadOrder
-    sortField <- liftEffect loadSort
-    H.modify_ _ { customOrder = order, sortField = sortField }
+    repoList <- liftEffect loadRepoList
+    H.modify_ _ { repoList = repoList }
     case saved of
       "" -> pure unit
       tok -> do
@@ -212,27 +185,6 @@ handleAction = case _ of
             Set.delete key st.expandedItems
           else Set.insert key st.expandedItems
       }
-  SetSort field -> do
-    st <- H.get
-    if st.sortField == field then
-      H.modify_ _ { sortDir = flipDir st.sortDir }
-    else do
-      when (field == SortCustom) do
-        when (null st.customOrder) do
-          let
-            currentOrder = map
-              (\(Repo r) -> r.fullName)
-              ( applySort st
-                  (applyFilter st st.repos)
-              )
-          H.modify_ _
-            { customOrder = currentOrder }
-          liftEffect $ saveOrder currentOrder
-      liftEffect $ saveSort field
-      H.modify_ _
-        { sortField = field
-        , sortDir = Desc
-        }
   SetFilter txt ->
     H.modify_ _ { filterText = txt }
   ToggleAutoRefresh -> do
@@ -260,11 +212,14 @@ handleAction = case _ of
         H.modify_ _ { dragging = Nothing }
         when (srcName /= targetName) do
           let
-            order = ensureOrder st
-            newOrder = moveItem srcName targetName
-              order
-          H.modify_ _ { customOrder = newOrder }
-          liftEffect $ saveOrder newOrder
+            newList = moveItem srcName targetName
+              st.repoList
+            newRepos = orderRepos newList st.repos
+          H.modify_ _
+            { repoList = newList
+            , repos = newRepos
+            }
+          liftEffect $ saveRepoList newList
   ToggleAddRepo -> do
     st <- H.get
     H.modify_ _
@@ -299,43 +254,33 @@ handleAction = case _ of
               H.modify_ _
                 { error = Just err }
             Right repo -> do
-              pinned <- liftEffect loadPinned
-              let
-                newPinned = pinned <> [ name ]
-              liftEffect $ savePinned newPinned
               st2 <- H.get
               let
-                newOrder = [ name ]
-                  <> st2.customOrder
+                newList = [ name ] <> st2.repoList
               H.modify_ _
                 { repos = [ repo ] <> st2.repos
-                , customOrder = newOrder
+                , repoList = newList
                 , showAddRepo = false
                 , addRepoInput = ""
                 , error = Nothing
                 }
-              liftEffect $ saveOrder newOrder
+              liftEffect $ saveRepoList newList
   ResetAll -> do
     ok <- liftEffect do
       w <- window
       confirm "Reset all saved data?" w
     when ok do
-      liftEffect clearToken
-      H.modify_ _ { token = "", hasToken = false, repos = [], expanded = Nothing, details = Nothing, error = Nothing, loading = false }
-
--- | Ensure custom order contains all current repos.
-ensureOrder :: State -> Array String
-ensureOrder st =
-  let
-    repoNames = map (\(Repo r) -> r.fullName) st.repos
-    existing = filter
-      (\n -> Array.elem n repoNames)
-      st.customOrder
-    missing = filter
-      (\n -> not (Array.elem n existing))
-      repoNames
-  in
-    existing <> missing
+      liftEffect clearAll
+      H.modify_ _
+        { token = ""
+        , hasToken = false
+        , repos = []
+        , repoList = []
+        , expanded = Nothing
+        , details = Nothing
+        , error = Nothing
+        , loading = false
+        }
 
 -- | Extract owner/repo from a GitHub URL or plain name.
 parseRepoName :: String -> Maybe String
@@ -350,58 +295,87 @@ parseRepoName input =
           (trim input)
       )
     parts = filter (_ /= "")
-      (split (Pattern "/") stripped)
+      (Str.split (Pattern "/") stripped)
   in
     case parts of
       [ owner, repo ] -> Just (owner <> "/" <> repo)
       _ -> Nothing
 
-flipDir :: SortDir -> SortDir
-flipDir Asc = Desc
-flipDir Desc = Asc
-
--- | Fetch all repos.
+-- | Fetch repos. If repoList is empty, seed from API.
 doRefresh
   :: forall o
    . String
   -> H.HalogenM State Action () o Aff Unit
 doRefresh token = do
-  result <- H.liftAff (fetchUserRepos token)
-  case result of
-    Left err ->
-      H.modify_ _
-        { error = Just err, loading = false }
-    Right { repos, rateLimit } -> do
-      pinned <- liftEffect loadPinned
-      let
-        ownedNames = map
-          (\(Repo r) -> r.fullName)
-          repos
-        extraNames = filter
-          (\n -> not (Array.elem n ownedNames))
-          pinned
-      extras <- H.liftAff $ fetchPinned token
-        extraNames
-      H.modify_ _
-        { repos = repos <> extras
-        , rateLimit = rateLimit
-        , loading = false
-        , error = Nothing
-        }
+  st <- H.get
+  if null st.repoList then do
+    result <- H.liftAff (fetchUserRepos token)
+    case result of
+      Left err ->
+        H.modify_ _
+          { error = Just err, loading = false }
+      Right { repos, rateLimit } -> do
+        let
+          seeded = take 15 repos
+          names = map
+            (\(Repo r) -> r.fullName)
+            seeded
+        H.modify_ _
+          { repos = seeded
+          , repoList = names
+          , rateLimit = rateLimit
+          , loading = false
+          , error = Nothing
+          }
+        liftEffect $ saveRepoList names
+  else do
+    results <- H.liftAff $
+      fetchRepoList token st.repoList
+    H.modify_ _
+      { repos = orderRepos st.repoList results.repos
+      , rateLimit = results.rateLimit
+      , loading = false
+      , error = results.error
+      }
 
--- | Fetch pinned repos individually.
-fetchPinned
+-- | Fetch all repos in the stored list individually.
+fetchRepoList
   :: String
   -> Array String
-  -> Aff (Array Repo)
-fetchPinned token names = do
-  results <- traverse (\n -> fetchRepo token n) names
-  pure $ Array.catMaybes $ map
-    ( case _ of
-        Right r -> Just r
-        Left _ -> Nothing
-    )
-    results
+  -> Aff
+       { repos :: Array Repo
+       , rateLimit :: Maybe RateLimit
+       , error :: Maybe String
+       }
+fetchRepoList token names = do
+  results <- traverse (fetchRepo token) names
+  let
+    repos = Array.catMaybes $ map
+      ( case _ of
+          Right r -> Just r
+          Left _ -> Nothing
+      )
+      results
+    firstErr = Array.findMap
+      ( case _ of
+          Left e -> Just e
+          Right _ -> Nothing
+      )
+      results
+  pure
+    { repos
+    , rateLimit: Nothing
+    , error: firstErr
+    }
+
+-- | Order repos to match the stored list.
+orderRepos :: Array String -> Array Repo -> Array Repo
+orderRepos order repos = Array.catMaybes $ map
+  ( \name -> Array.find
+      (\(Repo r) -> r.fullName == name)
+      repos
+  )
+  order
 
 -- | Fetch detail for one repo.
 fetchDetail
@@ -460,87 +434,35 @@ saveToken tok = do
   s <- localStorage w
   Storage.setItem storageKeyToken tok s
 
-clearToken :: Effect Unit
-clearToken = do
+loadRepoList :: Effect (Array String)
+loadRepoList = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeyRepos s
+  pure $ case raw of
+    Nothing -> []
+    Just str ->
+      case
+        jsonParser str
+          >>= (lmap printJsonDecodeError <<< decodeJson)
+        of
+        Right arr -> arr
+        Left _ -> []
+
+saveRepoList :: Array String -> Effect Unit
+saveRepoList repos = do
+  w <- window
+  s <- localStorage w
+  Storage.setItem storageKeyRepos
+    (stringify (encodeJson repos))
+    s
+
+clearAll :: Effect Unit
+clearAll = do
   w <- window
   s <- localStorage w
   Storage.removeItem storageKeyToken s
-
-storageKeySort :: String
-storageKeySort = "gh-dashboard-sort"
-
-loadSort :: Effect SortField
-loadSort = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeySort s
-  pure $ case raw of
-    Just "name" -> SortName
-    Just "updated" -> SortUpdated
-    Just "issues" -> SortIssues
-    Just "custom" -> SortCustom
-    _ -> SortUpdated
-
-saveSort :: SortField -> Effect Unit
-saveSort field = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeySort
-    ( case field of
-        SortName -> "name"
-        SortUpdated -> "updated"
-        SortIssues -> "issues"
-        SortCustom -> "custom"
-    )
-    s
-
-storageKeyPinned :: String
-storageKeyPinned = "gh-dashboard-pinned"
-
-loadPinned :: Effect (Array String)
-loadPinned = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeyPinned s
-  pure $ case raw of
-    Nothing -> []
-    Just str -> case jsonParser str >>= (lmap printJsonDecodeError <<< decodeJson) of
-      Right arr -> arr
-      Left _ -> []
-
-savePinned :: Array String -> Effect Unit
-savePinned pinned = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeyPinned
-    (stringify (encodeJson pinned))
-    s
-
-storageKeyOrder :: String
-storageKeyOrder = "gh-dashboard-order"
-
-loadOrder :: Effect (Array String)
-loadOrder = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeyOrder s
-  pure $ case raw of
-    Nothing -> []
-    Just str -> case jsonParser str >>= (lmap printJsonDecodeError <<< decodeJson) of
-      Right arr -> arr
-      Left _ -> []
-
-saveOrder :: Array String -> Effect Unit
-saveOrder order = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeyOrder
-    (stringify (encodeJson order))
-    s
-
-orderIndex :: Array String -> String -> Int
-orderIndex order name =
-  fromMaybe 999999 (findIndex (_ == name) order)
+  Storage.removeItem storageKeyRepos s
 
 moveItem :: String -> String -> Array String -> Array String
 moveItem src target order =
