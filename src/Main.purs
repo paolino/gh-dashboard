@@ -328,16 +328,20 @@ handleAction = case _ of
     if st.expanded == Just fullName then
       H.modify_ _
         { expanded = Nothing
-        , details = Nothing
-        , detailLoading = false
-        , expandedItems = Set.empty
         }
-    else
+    else do
+      let
+        switching = st.expanded /= Nothing
+          && st.expanded /= Just fullName
       H.modify_ _
         { expanded = Just fullName
         , detailLoading = false
-        , details = Nothing
-        , expandedItems = Set.empty
+        , details =
+            if switching then Nothing
+            else st.details
+        , expandedItems =
+            if switching then Set.empty
+            else st.expandedItems
         }
   ToggleItem key -> do
     st <- H.get

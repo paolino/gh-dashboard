@@ -4,6 +4,7 @@ module View.Helpers
   , linkButton
   , detailHead
   , renderAssignees
+  , renderAuthor
   , renderLabels
   , formatDate
   , parseMarkdownImpl
@@ -11,11 +12,11 @@ module View.Helpers
 
 import Prelude
 
-import Data.Array (null)
+import Data.Array (intersperse, null)
 import Data.Maybe (Maybe(..))
-import Data.String (joinWith, take)
+import Data.String (take)
 import Halogen.HTML as HH
-import Halogen.HTML.Core (PropName(..))
+import Halogen.HTML.Core (AttrName(..), PropName(..))
 import Halogen.HTML.Properties as HP
 import Types (Assignee, Label)
 
@@ -64,7 +65,8 @@ detailHead :: forall w i. HH.HTML w i
 detailHead =
   HH.thead_
     [ HH.tr_
-        [ HH.th_ [ HH.text "Title" ]
+        [ HH.th_ []
+        , HH.th_ [ HH.text "Title" ]
         , HH.th_ [ HH.text "Assignees" ]
         , HH.th_ [ HH.text "Author" ]
         , HH.th_ [ HH.text "Date" ]
@@ -81,9 +83,38 @@ renderAssignees assignees =
       [ HP.class_
           (HH.ClassName "detail-assignees")
       ]
-      [ HH.text
-          (joinWith ", " (map _.login assignees))
-      ]
+      ( intersperse (HH.text ", ")
+          ( map
+              ( \a ->
+                  HH.a
+                    [ HP.href
+                        ( "https://github.com/"
+                            <> a.login
+                        )
+                    , HP.target "_blank"
+                    , HP.class_
+                        (HH.ClassName "user-link")
+                    , HP.attr (AttrName "onclick")
+                        "event.stopPropagation()"
+                    ]
+                    [ HH.text a.login ]
+              )
+              assignees
+          )
+      )
+
+-- | Render author as a link to their GitHub profile.
+renderAuthor :: forall w i. String -> HH.HTML w i
+renderAuthor login =
+  HH.a
+    [ HP.href
+        ("https://github.com/" <> login)
+    , HP.target "_blank"
+    , HP.class_ (HH.ClassName "user-link")
+    , HP.attr (AttrName "onclick")
+        "event.stopPropagation()"
+    ]
+    [ HH.text login ]
 
 -- | Render label tags (non-clickable, for rows).
 renderLabels

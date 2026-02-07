@@ -23,6 +23,7 @@ import View.Helpers
   , formatDate
   , linkButton
   , renderAssignees
+  , renderAuthor
   , renderLabels
   , renderMarkdownRow
   )
@@ -211,12 +212,7 @@ renderIssueRow state isHidden (Issue i) =
         , HH.td_
             [ renderAssignees i.assignees ]
         , HH.td_
-            [ HH.span
-                [ HP.class_
-                    (HH.ClassName "detail-author")
-                ]
-                [ HH.text i.userLogin ]
-            ]
+            [ renderAuthor i.userLogin ]
         , HH.td_
             [ HH.span
                 [ HP.class_
