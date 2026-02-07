@@ -25,6 +25,7 @@ import Halogen as H
 import Halogen.Aff as HA
 import Halogen.VDom.Driver (runUI)
 import FFI.Clipboard (copyToClipboard)
+import FFI.Storage as FFIStorage
 import FFI.Theme (setBodyTheme)
 import Refresh (doRefresh, refreshSinglePR)
 import RepoUtils
@@ -503,6 +504,10 @@ handleAction = case _ of
     liftEffect do
       saveTheme dark
       setBodyTheme dark
+  ExportStorage ->
+    liftEffect FFIStorage.exportStorage
+  ImportStorage ->
+    liftEffect FFIStorage.importStorage
   ResetAll -> do
     ok <- liftEffect do
       w <- window

@@ -179,6 +179,18 @@ renderToolbar state =
             ]
         ]
     , HH.button
+        [ HE.onClick \_ -> ExportStorage
+        , HP.class_ (HH.ClassName "btn-hide")
+        , HP.title "Export settings"
+        ]
+        [ HH.text "\x2B07" ]
+    , HH.button
+        [ HE.onClick \_ -> ImportStorage
+        , HP.class_ (HH.ClassName "btn-hide")
+        , HP.title "Import settings"
+        ]
+        [ HH.text "\x2B06" ]
+    , HH.button
         [ HE.onClick \_ -> ResetAll
         , HP.class_ (HH.ClassName "btn-hide")
         , HP.title "Reset all data"
