@@ -6,6 +6,7 @@ module GitHub
   , fetchUserRepos
   , fetchRepoIssues
   , fetchRepoPRs
+  , fetchRepo
   ) where
 
 import Prelude
@@ -207,6 +208,21 @@ fetchRepoIssues token fullName = do
         r.items
     )
     result
+
+-- | Fetch a single repo by full name (owner/repo).
+fetchRepo
+  :: String
+  -> String
+  -> Aff (Either String Repo)
+fetchRepo token fullName = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+    )
+  pure $ result >>= \r ->
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right repo -> Right repo
 
 -- | Fetch open pull requests for a repo.
 fetchRepoPRs
