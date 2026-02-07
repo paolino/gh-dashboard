@@ -50,6 +50,9 @@ storageKeyToken = "gh-dashboard-token"
 storageKeyRepos :: String
 storageKeyRepos = "gh-dashboard-repos"
 
+storageKeyHidden :: String
+storageKeyHidden = "gh-dashboard-hidden"
+
 rootComponent
   :: forall q i o. H.Component q i o Aff
 rootComponent =
@@ -79,6 +82,7 @@ initialState =
   , expandedItems: Set.empty
   , autoRefresh: true
   , repoList: []
+  , hiddenItems: Set.empty
   , dragging: Nothing
   , showAddRepo: false
   , addRepoInput: ""
@@ -115,7 +119,11 @@ handleAction = case _ of
   Initialize -> do
     saved <- liftEffect loadToken
     repoList <- liftEffect loadRepoList
-    H.modify_ _ { repoList = repoList }
+    hidden <- liftEffect loadHidden
+    H.modify_ _
+      { repoList = repoList
+      , hiddenItems = hidden
+      }
     case saved of
       "" -> pure unit
       tok -> do
@@ -285,6 +293,15 @@ handleAction = case _ of
           else st.details
       }
     liftEffect $ saveRepoList newList
+  HideItem url -> do
+    st <- H.get
+    let
+      newHidden =
+        if Set.member url st.hiddenItems then
+          Set.delete url st.hiddenItems
+        else Set.insert url st.hiddenItems
+    H.modify_ _ { hiddenItems = newHidden }
+    liftEffect $ saveHidden newHidden
   ResetAll -> do
     ok <- liftEffect do
       w <- window
@@ -296,6 +313,7 @@ handleAction = case _ of
         , hasToken = false
         , repos = []
         , repoList = []
+        , hiddenItems = Set.empty
         , expanded = Nothing
         , details = Nothing
         , error = Nothing
@@ -483,6 +501,34 @@ clearAll = do
   s <- localStorage w
   Storage.removeItem storageKeyToken s
   Storage.removeItem storageKeyRepos s
+  Storage.removeItem storageKeyHidden s
+
+loadHidden :: Effect (Set.Set String)
+loadHidden = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeyHidden s
+  pure $ case raw of
+    Nothing -> Set.empty
+    Just str ->
+      case
+        jsonParser str
+          >>= (lmap printJsonDecodeError <<< decodeJson)
+        of
+        Right (arr :: Array String) ->
+          Set.fromFoldable arr
+        Left _ -> Set.empty
+
+saveHidden :: Set.Set String -> Effect Unit
+saveHidden hidden = do
+  w <- window
+  s <- localStorage w
+  let
+    arr :: Array String
+    arr = Set.toUnfoldable hidden
+  Storage.setItem storageKeyHidden
+    (stringify (encodeJson arr))
+    s
 
 moveItem :: String -> String -> Array String -> Array String
 moveItem src target order =

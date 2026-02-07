@@ -8,7 +8,7 @@ module View
 
 import Prelude
 
-import Data.Array (null)
+import Data.Array (length, null, partition)
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set (Set)
 import Data.Set as Set
@@ -47,6 +47,7 @@ data Action
   | SetAddRepoInput String
   | SubmitAddRepo
   | RemoveRepo String
+  | HideItem String
   | ResetAll
 
 -- | Application state (referenced by view).
@@ -66,6 +67,7 @@ type State =
   , expandedItems :: Set String
   , autoRefresh :: Boolean
   , repoList :: Array String
+  , hiddenItems :: Set String
   , dragging :: Maybe String
   , showAddRepo :: Boolean
   , addRepoInput :: String
@@ -467,7 +469,7 @@ renderDetailPanel state =
         ]
     ]
 
--- | Issues sub-section.
+-- | Issues sub-section with visible/hidden partitions.
 renderIssuesSection
   :: forall w
    . State
@@ -477,13 +479,24 @@ renderIssuesSection
 renderIssuesSection state issues count =
   let
     key = "section-issues"
+    hiddenKey = "hidden-issues"
     isOpen = Set.member key state.expandedItems
+    hiddenOpen = Set.member hiddenKey
+      state.expandedItems
+    { yes: hidden, no: visible } = partition
+      ( \(Issue i) ->
+          Set.member i.htmlUrl state.hiddenItems
+      )
+      issues
+    hiddenCount = length hidden
   in
     HH.div
       [ HP.class_ (HH.ClassName "detail-section") ]
       [ HH.div
           [ HP.class_
-              (HH.ClassName "detail-heading clickable")
+              ( HH.ClassName
+                  "detail-heading clickable"
+              )
           , HE.onClick \_ -> ToggleItem key
           ]
           [ HH.text
@@ -505,22 +518,84 @@ renderIssuesSection state issues count =
             [ HP.class_
                 (HH.ClassName "detail-table")
             ]
-            [ detailHead
-            , HH.tbody_
-                ( issues >>= renderIssueRow state
-                )
-            ]
+            ( [ detailHead
+              , HH.tbody_
+                  ( if null visible then
+                      [ HH.tr_
+                          [ HH.td
+                              [ HP.colSpan 6 ]
+                              [ HH.span
+                                  [ HP.class_
+                                      ( HH.ClassName
+                                          "empty-msg"
+                                      )
+                                  ]
+                                  [ HH.text
+                                      "All issues hidden"
+                                  ]
+                              ]
+                          ]
+                      ]
+                    else
+                      visible >>= renderIssueRow
+                        state
+                        false
+                  )
+              ]
+                <>
+                  if null hidden then []
+                  else
+                    [ HH.tbody_
+                        [ HH.tr_
+                            [ HH.td
+                                [ HP.colSpan 6
+                                , HP.class_
+                                    ( HH.ClassName
+                                        "hidden-separator clickable"
+                                    )
+                                , HE.onClick
+                                    \_ ->
+                                      ToggleItem
+                                        hiddenKey
+                                ]
+                                [ HH.text
+                                    ( ( if hiddenOpen then
+                                          "\x25BE "
+                                        else
+                                          "\x25B8 "
+                                      )
+                                        <> "Hidden ("
+                                        <> show
+                                          hiddenCount
+                                        <> ")"
+                                    )
+                                ]
+                            ]
+                        ]
+                    , if not hiddenOpen then
+                        HH.text ""
+                      else
+                        HH.tbody_
+                          ( hidden
+                              >>= renderIssueRow
+                                state
+                                true
+                          )
+                    ]
+            )
       ]
 
 -- | Single issue row + optional body row.
 renderIssueRow
   :: forall w
    . State
+  -> Boolean
   -> Issue
   -> Array (HH.HTML w Action)
-renderIssueRow state (Issue i) =
+renderIssueRow state isHidden (Issue i) =
   let
-    key = "issue-" <> show i.number
+    prefix = if isHidden then "h-issue-" else "issue-"
+    key = prefix <> show i.number
     isOpen = Set.member key state.expandedItems
   in
     [ HH.tr
@@ -560,6 +635,8 @@ renderIssueRow state (Issue i) =
             ]
         , HH.td_
             [ linkButton i.htmlUrl ]
+        , HH.td_
+            [ hideButton i.htmlUrl isHidden ]
         ]
     ]
       <>
@@ -567,7 +644,7 @@ renderIssueRow state (Issue i) =
           renderMarkdownRow i.body
         else []
 
--- | PRs sub-section.
+-- | PRs sub-section with visible/hidden partitions.
 renderPRsSection
   :: forall w
    . State
@@ -577,13 +654,24 @@ renderPRsSection
 renderPRsSection state prs count =
   let
     key = "section-prs"
+    hiddenKey = "hidden-prs"
     isOpen = Set.member key state.expandedItems
+    hiddenOpen = Set.member hiddenKey
+      state.expandedItems
+    { yes: hidden, no: visible } = partition
+      ( \(PullRequest p) ->
+          Set.member p.htmlUrl state.hiddenItems
+      )
+      prs
+    hiddenCount = length hidden
   in
     HH.div
       [ HP.class_ (HH.ClassName "detail-section") ]
       [ HH.div
           [ HP.class_
-              (HH.ClassName "detail-heading clickable")
+              ( HH.ClassName
+                  "detail-heading clickable"
+              )
           , HE.onClick \_ -> ToggleItem key
           ]
           [ HH.text
@@ -605,21 +693,83 @@ renderPRsSection state prs count =
             [ HP.class_
                 (HH.ClassName "detail-table")
             ]
-            [ detailHead
-            , HH.tbody_
-                (prs >>= renderPRRow state)
-            ]
+            ( [ detailHead
+              , HH.tbody_
+                  ( if null visible then
+                      [ HH.tr_
+                          [ HH.td
+                              [ HP.colSpan 6 ]
+                              [ HH.span
+                                  [ HP.class_
+                                      ( HH.ClassName
+                                          "empty-msg"
+                                      )
+                                  ]
+                                  [ HH.text
+                                      "All pull requests hidden"
+                                  ]
+                              ]
+                          ]
+                      ]
+                    else
+                      visible >>= renderPRRow
+                        state
+                        false
+                  )
+              ]
+                <>
+                  if null hidden then []
+                  else
+                    [ HH.tbody_
+                        [ HH.tr_
+                            [ HH.td
+                                [ HP.colSpan 6
+                                , HP.class_
+                                    ( HH.ClassName
+                                        "hidden-separator clickable"
+                                    )
+                                , HE.onClick
+                                    \_ ->
+                                      ToggleItem
+                                        hiddenKey
+                                ]
+                                [ HH.text
+                                    ( ( if hiddenOpen then
+                                          "\x25BE "
+                                        else
+                                          "\x25B8 "
+                                      )
+                                        <> "Hidden ("
+                                        <> show
+                                          hiddenCount
+                                        <> ")"
+                                    )
+                                ]
+                            ]
+                        ]
+                    , if not hiddenOpen then
+                        HH.text ""
+                      else
+                        HH.tbody_
+                          ( hidden >>= renderPRRow
+                              state
+                              true
+                          )
+                    ]
+            )
       ]
 
 -- | Single PR row + optional body row.
 renderPRRow
   :: forall w
    . State
+  -> Boolean
   -> PullRequest
   -> Array (HH.HTML w Action)
-renderPRRow state (PullRequest pr) =
+renderPRRow state isHidden (PullRequest pr) =
   let
-    key = "pr-" <> show pr.number
+    prefix = if isHidden then "h-pr-" else "pr-"
+    key = prefix <> show pr.number
     isOpen = Set.member key state.expandedItems
   in
     [ HH.tr
@@ -671,6 +821,8 @@ renderPRRow state (PullRequest pr) =
             ]
         , HH.td_
             [ linkButton pr.htmlUrl ]
+        , HH.td_
+            [ hideButton pr.htmlUrl isHidden ]
         ]
     ]
       <>
@@ -690,7 +842,7 @@ renderMarkdownRow = case _ of
     [ HH.tr
         [ HP.class_ (HH.ClassName "detail-row") ]
         [ HH.td
-            [ HP.colSpan 5 ]
+            [ HP.colSpan 6 ]
             [ HH.div
                 [ HP.class_
                     (HH.ClassName "detail-body")
@@ -725,7 +877,20 @@ detailHead =
         , HH.th_ [ HH.text "Author" ]
         , HH.th_ [ HH.text "Date" ]
         , HH.th_ []
+        , HH.th_ []
         ]
+    ]
+
+-- | Hide/unhide toggle button.
+hideButton
+  :: forall w. String -> Boolean -> HH.HTML w Action
+hideButton url isHidden =
+  HH.button
+    [ HE.onClick \_ -> HideItem url
+    , HP.class_ (HH.ClassName "btn-hide")
+    ]
+    [ HH.text
+        (if isHidden then "\x25C9" else "\x25CC")
     ]
 
 -- | Render assignees.
