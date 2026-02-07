@@ -49,6 +49,9 @@ data Action
   | ToggleAutoRefresh
   | DragStart String
   | DragDrop String
+  | ToggleAddRepo
+  | SetAddRepoInput String
+  | SubmitAddRepo
   | ResetAll
 
 -- | Application state (referenced by view).
@@ -71,6 +74,8 @@ type State =
   , autoRefresh :: Boolean
   , customOrder :: Array String
   , dragging :: Maybe String
+  , showAddRepo :: Boolean
+  , addRepoInput :: String
   }
 
 -- | Token input form shown when no token is set.
@@ -148,6 +153,23 @@ renderDashboard
 renderDashboard state repos =
   HH.div_
     [ renderToolbar state
+    , if state.showAddRepo then
+        HH.div
+          [ HP.class_ (HH.ClassName "add-repo-bar") ]
+          [ HH.input
+              [ HP.placeholder "https://github.com/owner/repo"
+              , HP.value state.addRepoInput
+              , HE.onValueInput SetAddRepoInput
+              , HP.class_
+                  (HH.ClassName "filter-input")
+              ]
+          , HH.button
+              [ HE.onClick \_ -> SubmitAddRepo
+              , HP.class_ (HH.ClassName "btn-small")
+              ]
+              [ HH.text "Add" ]
+          ]
+      else HH.text ""
     , case state.error of
         Just err ->
           HH.div
@@ -177,6 +199,16 @@ renderToolbar state =
               else "\x21BB Refresh"
             )
         ]
+    , HH.button
+        [ HE.onClick \_ -> ToggleAddRepo
+        , HP.class_
+            ( HH.ClassName
+                ( "btn-back"
+                    <> activeIf state.showAddRepo
+                )
+            )
+        ]
+        [ HH.text "+" ]
     , HH.button
         [ HE.onClick \_ -> SetSort SortName
         , HP.class_

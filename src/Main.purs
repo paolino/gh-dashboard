@@ -4,11 +4,14 @@ import Prelude
 
 import Data.Array (filter, findIndex, length, null, sortBy)
 import Data.Array as Array
+import Data.Traversable (traverse)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
 import Data.Ordering (invert)
-import Data.String (Pattern(..), contains, toLower)
+import Data.String (Pattern(..), contains, split, toLower, trim)
+import Data.String.Pattern (Replacement(..))
+import Data.String (replaceAll) as Str
 import Data.Argonaut.Core (stringify)
 import Data.Argonaut.Decode.Class (decodeJson)
 import Data.Argonaut.Decode.Error (printJsonDecodeError)
@@ -20,7 +23,8 @@ import Effect.Aff (Aff, Milliseconds(..), delay)
 import Effect.Aff as Aff
 import Effect.Class (liftEffect)
 import GitHub
-  ( fetchRepoIssues
+  ( fetchRepo
+  , fetchRepoIssues
   , fetchRepoPRs
   , fetchUserRepos
   )
@@ -81,6 +85,8 @@ initialState =
   , autoRefresh: true
   , customOrder: []
   , dragging: Nothing
+  , showAddRepo: false
+  , addRepoInput: ""
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -259,6 +265,56 @@ handleAction = case _ of
               order
           H.modify_ _ { customOrder = newOrder }
           liftEffect $ saveOrder newOrder
+  ToggleAddRepo -> do
+    st <- H.get
+    H.modify_ _
+      { showAddRepo = not st.showAddRepo
+      , addRepoInput = ""
+      }
+  SetAddRepoInput txt ->
+    H.modify_ _ { addRepoInput = txt }
+  SubmitAddRepo -> do
+    st <- H.get
+    case parseRepoName st.addRepoInput of
+      Nothing ->
+        H.modify_ _
+          { error = Just "Enter a GitHub URL" }
+      Just name -> do
+        let
+          alreadyExists = Array.any
+            (\(Repo r) -> r.fullName == name)
+            st.repos
+        if alreadyExists then
+          H.modify_ _
+            { error = Just
+                (name <> " is already in the list")
+            , showAddRepo = false
+            , addRepoInput = ""
+            }
+        else do
+          result <- H.liftAff
+            (fetchRepo st.token name)
+          case result of
+            Left err ->
+              H.modify_ _
+                { error = Just err }
+            Right repo -> do
+              pinned <- liftEffect loadPinned
+              let
+                newPinned = pinned <> [ name ]
+              liftEffect $ savePinned newPinned
+              st2 <- H.get
+              let
+                newOrder = [ name ]
+                  <> st2.customOrder
+              H.modify_ _
+                { repos = [ repo ] <> st2.repos
+                , customOrder = newOrder
+                , showAddRepo = false
+                , addRepoInput = ""
+                , error = Nothing
+                }
+              liftEffect $ saveOrder newOrder
   ResetAll -> do
     ok <- liftEffect do
       w <- window
@@ -281,6 +337,25 @@ ensureOrder st =
   in
     existing <> missing
 
+-- | Extract owner/repo from a GitHub URL or plain name.
+parseRepoName :: String -> Maybe String
+parseRepoName input =
+  let
+    stripped = Str.replaceAll
+      (Pattern "https://github.com/")
+      (Replacement "")
+      ( Str.replaceAll
+          (Pattern "http://github.com/")
+          (Replacement "")
+          (trim input)
+      )
+    parts = filter (_ /= "")
+      (split (Pattern "/") stripped)
+  in
+    case parts of
+      [ owner, repo ] -> Just (owner <> "/" <> repo)
+      _ -> Nothing
+
 flipDir :: SortDir -> SortDir
 flipDir Asc = Desc
 flipDir Desc = Asc
@@ -296,13 +371,37 @@ doRefresh token = do
     Left err ->
       H.modify_ _
         { error = Just err, loading = false }
-    Right { repos, rateLimit } ->
+    Right { repos, rateLimit } -> do
+      pinned <- liftEffect loadPinned
+      let
+        ownedNames = map
+          (\(Repo r) -> r.fullName)
+          repos
+        extraNames = filter
+          (\n -> not (Array.elem n ownedNames))
+          pinned
+      extras <- H.liftAff $ fetchPinned token
+        extraNames
       H.modify_ _
-        { repos = repos
+        { repos = repos <> extras
         , rateLimit = rateLimit
         , loading = false
         , error = Nothing
         }
+
+-- | Fetch pinned repos individually.
+fetchPinned
+  :: String
+  -> Array String
+  -> Aff (Array Repo)
+fetchPinned token names = do
+  results <- traverse (\n -> fetchRepo token n) names
+  pure $ Array.catMaybes $ map
+    ( case _ of
+        Right r -> Just r
+        Left _ -> Nothing
+    )
+    results
 
 -- | Fetch detail for one repo.
 fetchDetail
@@ -393,6 +492,28 @@ saveSort field = do
         SortIssues -> "issues"
         SortCustom -> "custom"
     )
+    s
+
+storageKeyPinned :: String
+storageKeyPinned = "gh-dashboard-pinned"
+
+loadPinned :: Effect (Array String)
+loadPinned = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeyPinned s
+  pure $ case raw of
+    Nothing -> []
+    Just str -> case jsonParser str >>= (lmap printJsonDecodeError <<< decodeJson) of
+      Right arr -> arr
+      Left _ -> []
+
+savePinned :: Array String -> Effect Unit
+savePinned pinned = do
+  w <- window
+  s <- localStorage w
+  Storage.setItem storageKeyPinned
+    (stringify (encodeJson pinned))
     s
 
 storageKeyOrder :: String
