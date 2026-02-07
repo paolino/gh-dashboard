@@ -109,12 +109,19 @@ renderTokenForm state =
         [ HH.h3_ [ HH.text "Getting started" ]
         , HH.ol_
             [ HH.li_
-                [ HH.text "Create a "
-                , HH.strong_
-                    [ HH.text "GitHub token" ]
-                , HH.text " with "
+                [ HH.a
+                    [ HP.href
+                        "https://github.com/settings/tokens/new?scopes=repo&description=gh-dashboard"
+                    , HP.target "_blank"
+                    , HP.class_
+                        (HH.ClassName "token-link")
+                    ]
+                    [ HH.text
+                        "Create a GitHub token"
+                    ]
+                , HH.text " (select "
                 , HH.code_ [ HH.text "repo" ]
-                , HH.text " scope"
+                , HH.text " scope)"
                 ]
             , HH.li_
                 [ HH.text
