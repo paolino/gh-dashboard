@@ -265,6 +265,26 @@ handleAction = case _ of
                 , error = Nothing
                 }
               liftEffect $ saveRepoList newList
+  RemoveRepo fullName -> do
+    st <- H.get
+    let
+      newList = filter (_ /= fullName) st.repoList
+      newRepos = filter
+        (\(Repo r) -> r.fullName /= fullName)
+        st.repos
+    H.modify_ _
+      { repoList = newList
+      , repos = newRepos
+      , expanded =
+          if st.expanded == Just fullName then
+            Nothing
+          else st.expanded
+      , details =
+          if st.expanded == Just fullName then
+            Nothing
+          else st.details
+      }
+    liftEffect $ saveRepoList newList
   ResetAll -> do
     ok <- liftEffect do
       w <- window

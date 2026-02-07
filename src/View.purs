@@ -46,6 +46,7 @@ data Action
   | ToggleAddRepo
   | SetAddRepoInput String
   | SubmitAddRepo
+  | RemoveRepo String
   | ResetAll
 
 -- | Application state (referenced by view).
@@ -305,6 +306,7 @@ renderRepoTable state repos =
             , HH.th_
                 [ HH.text "Updated" ]
             , HH.th_ []
+            , HH.th_ []
             ]
         ]
     , HH.tbody_
@@ -373,6 +375,15 @@ renderRepoRow state (Repo r) =
             ]
         , HH.td_
             [ linkButton r.htmlUrl ]
+        , HH.td_
+            [ HH.button
+                [ HE.onClick \_ -> RemoveRepo
+                    r.fullName
+                , HP.class_
+                    (HH.ClassName "btn-remove")
+                ]
+                [ HH.text "\x2715" ]
+            ]
         ]
     ]
       <>
@@ -430,7 +441,7 @@ renderDetailPanel state =
   HH.tr
     [ HP.class_ (HH.ClassName "detail-panel") ]
     [ HH.td
-        [ HP.colSpan 8 ]
+        [ HP.colSpan 9 ]
         [ if state.detailLoading then
             HH.div
               [ HP.class_
