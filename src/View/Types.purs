@@ -14,7 +14,7 @@ data Action
   = Initialize
   | SetToken String
   | SubmitToken
-  | Refresh
+  | RefreshRepo String
   | RefreshIssues
   | RefreshIssue Int
   | RefreshPRs

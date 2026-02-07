@@ -31,7 +31,7 @@ renderDetailPanel state =
   HH.tr
     [ HP.class_ (HH.ClassName "detail-panel") ]
     [ HH.td
-        [ HP.colSpan 9 ]
+        [ HP.colSpan 10 ]
         [ if state.detailLoading then
             HH.div
               [ HP.class_
@@ -191,6 +191,10 @@ renderIssueRow state isHidden (Issue i) =
         , HP.class_ (HH.ClassName "repo-row")
         ]
         [ HH.td_
+            [ refreshButton
+                (RefreshIssue i.number)
+            ]
+        , HH.td_
             [ HH.span
                 [ HP.class_
                     (HH.ClassName "detail-link")
@@ -373,6 +377,10 @@ renderPRRow state isHidden (PullRequest pr) =
         , HP.class_ (HH.ClassName "repo-row")
         ]
         [ HH.td_
+            [ refreshButton
+                (RefreshPR pr.number)
+            ]
+        , HH.td_
             ( [ HH.span
                   [ HP.class_
                       (HH.ClassName "detail-link")

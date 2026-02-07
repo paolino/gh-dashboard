@@ -124,22 +124,13 @@ renderDashboard state repos =
         renderRepoTable state repos
     ]
 
--- | Toolbar with refresh, timer, filter.
+-- | Toolbar with filter and controls.
 renderToolbar
   :: forall w. State -> HH.HTML w Action
 renderToolbar state =
   HH.div
     [ HP.class_ (HH.ClassName "toolbar") ]
     [ HH.button
-        [ HE.onClick \_ -> Refresh
-        , HP.class_ (HH.ClassName "btn-back")
-        ]
-        [ HH.text
-            ( if state.loading then "\x21BB ..."
-              else "\x21BB Refresh"
-            )
-        ]
-    , HH.button
         [ HE.onClick \_ -> ToggleAddRepo
         , HP.class_
             ( HH.ClassName
@@ -156,18 +147,29 @@ renderToolbar state =
         , HP.class_ (HH.ClassName "filter-input")
         ]
     , renderRateLimit state.rateLimit
+    , HH.div
+        [ HP.class_
+            (HH.ClassName "toolbar-spacer")
+        ]
+        []
     , HH.a
         [ HP.href
             "https://github.com/paolino/gh-dashboard"
         , HP.target "_blank"
-        , HP.class_ (HH.ClassName "btn-small")
+        , HP.class_ (HH.ClassName "link-btn")
         ]
-        [ HH.text "\x2605 GitHub" ]
+        [ HH.img
+            [ HP.src
+                "https://github.githubassets.com/favicons/favicon-dark.svg"
+            , HP.width 16
+            , HP.height 16
+            ]
+        ]
     , HH.button
         [ HE.onClick \_ -> ResetAll
-        , HP.class_ (HH.ClassName "btn-small")
+        , HP.class_ (HH.ClassName "btn-hide")
         ]
-        [ HH.text "\x2715 Reset" ]
+        [ HH.text "\x2620" ]
     ]
 
 activeIf :: Boolean -> String
