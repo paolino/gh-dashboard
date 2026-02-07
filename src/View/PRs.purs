@@ -33,6 +33,7 @@ import View.Helpers
   , formatDate
   , linkButton
   , renderAssignees
+  , renderAuthor
   , renderLabels
   , renderMarkdownRow
   )
@@ -56,15 +57,22 @@ renderPRsSection state prs count =
       state.details >>= \d ->
         Map.lookup pr d.prChecks
           <#> combineCheckRuns
-    ciStatuses = sort
-      $ Set.toUnfoldable
-      $ Set.fromFoldable
-      $ filter (_ /= "unknown")
+    allCiNames = filter (_ /= "unknown")
       $ map
           ( \(PullRequest p) ->
               fromMaybe "unknown" (prStatus p.number)
           )
           prs
+    ciUnique = sort $ Set.toUnfoldable
+      $ Set.fromFoldable allCiNames
+    ciStatuses = map
+      ( \n ->
+          { name: n
+          , count: length
+              (filter (_ == n) allCiNames)
+          }
+      )
+      ciUnique
     allLabels =
       collectLabels
         (map (\(PullRequest p) -> p.labels) prs)
@@ -257,12 +265,7 @@ renderPRRow state isHidden (PullRequest pr) =
         , HH.td_
             [ renderAssignees pr.assignees ]
         , HH.td_
-            [ HH.span
-                [ HP.class_
-                    (HH.ClassName "detail-author")
-                ]
-                [ HH.text pr.userLogin ]
-            ]
+            [ renderAuthor pr.userLogin ]
         , HH.td_
             [ HH.span
                 [ HP.class_

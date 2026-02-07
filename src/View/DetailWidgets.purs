@@ -9,7 +9,8 @@ module View.DetailWidgets
 
 import Prelude
 
-import Data.Array (concatMap, sort)
+import Data.Array (concatMap, filter, length, sort, sortBy)
+import Data.Function (on)
 import Data.Set as Set
 import Halogen.HTML as HH
 import Halogen.HTML.Core (AttrName(..))
@@ -57,20 +58,30 @@ hideButton url isHidden =
         (if isHidden then "\x25C9" else "\x25CC")
     ]
 
--- | Collect unique sorted label names from items.
+-- | Collect unique label names with counts from items.
 collectLabels
-  :: Array (Array { name :: String }) -> Array String
-collectLabels =
-  sort <<< Set.toUnfoldable <<< Set.fromFoldable
-    <<< map _.name
-    <<< concatMap identity
+  :: Array (Array { name :: String })
+  -> Array { name :: String, count :: Int }
+collectLabels items =
+  let
+    allNames = map _.name (concatMap identity items)
+    unique = sort $ Set.toUnfoldable $ Set.fromFoldable
+      allNames
+  in
+    sortBy (flip compare `on` _.count) $ map
+      ( \n ->
+          { name: n
+          , count: length (filter (_ == n) allNames)
+          }
+      )
+      unique
 
 -- | Vertical label selector with multi-select.
 renderLabelSelector
   :: forall w
    . Set.Set String
   -> (String -> Action)
-  -> Array String
+  -> Array { name :: String, count :: Int }
   -> HH.HTML w Action
 renderLabelSelector active toAction labels =
   HH.div
@@ -78,19 +89,24 @@ renderLabelSelector active toAction labels =
         (HH.ClassName "label-selector")
     ]
     ( map
-        ( \name ->
+        ( \l ->
             HH.span
               [ HP.class_
                   ( HH.ClassName
                       ( "label-tag clickable"
                           <>
-                            if Set.member name active then " active"
+                            if Set.member l.name active then " active"
                             else ""
                       )
                   )
-              , HE.onClick \_ -> toAction name
+              , HE.onClick \_ -> toAction l.name
               ]
-              [ HH.text name ]
+              [ HH.text
+                  ( l.name <> " ("
+                      <> show l.count
+                      <> ")"
+                  )
+              ]
         )
         labels
     )
