@@ -69,8 +69,8 @@
     .repo-row:hover { background: var(--bg-surface); }
     .repo-row td { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
     .repo-row.expanded { background: var(--bg-surface); }
-    .repo-name { color: var(--accent); font-weight: 500; font-size: 14px; text-decoration: none; }
-    .repo-name:hover { text-decoration: underline; }
+    .repo-name { color: var(--text); font-weight: 500; font-size: 14px; }
+    .repo-name:hover { color: var(--text); }
     .repo-desc { color: var(--text-muted); font-size: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
     .badge-lang { background: #1e3a5f; color: #64b5f6; }
@@ -81,12 +81,14 @@
     .badge-zero { opacity: 0.4; }
     .repo-name { cursor: pointer; }
     .repo-date { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
-    .link-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 4px; background: var(--bg-elevated); color: var(--accent); text-decoration: none; font-size: 14px; }
-    .link-btn:hover { background: #2a2a50; color: #64b5f6; }
+    .link-btn { color: var(--accent); text-decoration: none; font-size: 14px; }
+    .link-btn:hover { color: #64b5f6; }
     .btn-remove { background: none; border: none; color: #555; font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
     .btn-remove:hover { color: #f44336; background: #2a2a50; }
     .btn-hide { background: none; border: none; color: #555; font-size: 14px; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
     .btn-hide:hover { color: var(--text); background: #2a2a50; }
+    .theme-toggle { cursor: pointer; font-size: 16px; color: var(--text-muted); }
+    .theme-toggle:hover { color: var(--text); }
     .hidden-separator { padding-top: 12px !important; border-bottom: none !important; font-size: 10px; color: #555; cursor: pointer; }
     .hidden-separator:hover { color: var(--text); }
     .ci-badge { margin-left: 4px; }
@@ -115,6 +117,10 @@
     .detail-date { color: #555; font-size: 11px; white-space: nowrap; }
     .detail-labels { display: inline-flex; gap: 4px; margin-left: 8px; }
     .label-tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: var(--bg-elevated); color: var(--text-muted); }
+    .label-tag.clickable { cursor: pointer; }
+    .label-tag.clickable:hover { color: var(--text); }
+    .label-tag.active { background: var(--accent); color: #fff; }
+    .label-selector { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0 8px; }
     .draft-tag { background: #3e2723; color: #ffab91; }
     .detail-body { color: #c0c0c0; font-size: 12px; padding: 6px 0 4px; line-height: 1.4; word-break: break-word; }
     .detail-body p { margin: 2px 0; }
@@ -145,7 +151,7 @@
       .repo-table th:nth-child(5), .repo-table td:nth-child(5),
       .repo-table th:nth-child(6), .repo-table td:nth-child(6),
       .repo-table th:nth-child(7), .repo-table td:nth-child(7) { display: none; }
-      .link-btn { width: 24px; height: 24px; font-size: 12px; }
+      .link-btn { font-size: 12px; }
       .repo-row td { padding: 8px 6px; }
       .repo-table th { padding: 6px; }
       .detail-panel td { padding: 10px 6px; }

@@ -2,17 +2,14 @@ module Main where
 
 import Prelude
 
-import Data.Array (filter, findIndex, length, null, take)
+import Data.Array (filter, length, null)
 import Data.Array as Array
-import Data.Traversable (traverse, traverse_)
+import Data.Traversable (traverse_)
 import Data.Either (Either(..))
 import Data.Map as Map
 import Data.Tuple (Tuple(..))
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..))
 import Data.Set as Set
-import Data.String (Pattern(..), contains, toLower, trim)
-import Data.String (replaceAll, split) as Str
-import Data.String.Pattern (Replacement(..))
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -20,22 +17,33 @@ import GitHub
   ( fetchCheckRuns
   , fetchCommitStatuses
   , fetchIssue
-  , fetchPR
   , fetchRepo
   , fetchRepoIssues
   , fetchRepoPRs
-  , fetchUserRepos
   )
 import Halogen as H
 import Halogen.Aff as HA
 import Halogen.VDom.Driver (runUI)
+import FFI.Clipboard (copyToClipboard)
 import FFI.Theme (setBodyTheme)
+import Refresh (doRefresh, refreshSinglePR)
+import RepoUtils
+  ( applyFilter
+  , moveItem
+  , orderRepos
+  , parseRepoName
+  , upsertRepo
+  )
 import Storage
   ( clearAll
   , loadHidden
+  , loadIssueLabelFilters
+  , loadPRLabelFilters
   , loadRepoList
   , loadTheme
   , loadToken
+  , saveIssueLabelFilters
+  , savePRLabelFilters
   , saveRepoList
   , saveTheme
   , saveToken
@@ -82,30 +90,19 @@ initialState =
   , showAddRepo: false
   , addRepoInput: ""
   , darkTheme: true
+  , issuesLoading: false
+  , prsLoading: false
+  , issueLabelFilters: Set.empty
+  , prLabelFilters: Set.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
 render state =
   if state.hasToken then
-    renderDashboard state (applyFilter state state.repos)
+    renderDashboard state
+      (applyFilter state.filterText state.repos)
   else
     renderTokenForm state
-
--- | Filter repos by name/description.
-applyFilter :: State -> Array Repo -> Array Repo
-applyFilter state repos
-  | state.filterText == "" = repos
-  | otherwise =
-      let
-        q = toLower state.filterText
-      in
-        filter
-          ( \(Repo r) ->
-              contains (Pattern q) (toLower r.name)
-                || contains (Pattern q)
-                  (toLower (fromMaybe "" r.description))
-          )
-          repos
 
 handleAction
   :: forall o
@@ -117,11 +114,15 @@ handleAction = case _ of
     repoList <- liftEffect loadRepoList
     hidden <- liftEffect loadHidden
     dark <- liftEffect loadTheme
+    issueLabels <- liftEffect loadIssueLabelFilters
+    prLabels <- liftEffect loadPRLabelFilters
     liftEffect $ setBodyTheme dark
     H.modify_ _
       { repoList = repoList
       , hiddenItems = hidden
       , darkTheme = dark
+      , issueLabelFilters = issueLabels
+      , prLabelFilters = prLabels
       }
     case saved of
       "" -> pure unit
@@ -158,6 +159,7 @@ handleAction = case _ of
     case st.expanded of
       Nothing -> pure unit
       Just fullName -> do
+        H.modify_ _ { issuesLoading = true }
         result <- H.liftAff
           (fetchRepoIssues st.token fullName)
         st2 <- H.get
@@ -184,6 +186,7 @@ handleAction = case _ of
                     , issueCount = length issues
                     }
                 }
+        H.modify_ _ { issuesLoading = false }
   RefreshIssue issueNum -> do
     st <- H.get
     case st.expanded of
@@ -226,6 +229,7 @@ handleAction = case _ of
     case st.expanded of
       Nothing -> pure unit
       Just fullName -> do
+        H.modify_ _ { prsLoading = true }
         prsResult <- H.liftAff
           (fetchRepoPRs st.token fullName)
         st2 <- H.get
@@ -234,55 +238,85 @@ handleAction = case _ of
             prs = case prsResult of
               Right ps -> ps
               Left _ -> []
-            visiblePRs = filter
-              ( \(PullRequest p) ->
-                  not
-                    ( Set.member p.htmlUrl
-                        st2.hiddenItems
-                    )
-              )
-              prs
-          checkResults <- H.liftAff $ traverse
-            ( \(PullRequest pr) -> do
-                cr <- fetchCheckRuns st2.token
-                  fullName
-                  pr.headSha
-                cs <- fetchCommitStatuses
-                  st2.token
-                  fullName
-                  pr.headSha
-                let
-                  runs = case cr of
-                    Right r -> r
-                    Left _ -> []
-                  statuses = case cs of
-                    Right s -> s
-                    Left _ -> []
-                pure $ Tuple pr.number
-                  (runs <> statuses)
-            )
-            visiblePRs
-          let
-            checks = Map.fromFoldable checkResults
           case st2.details of
             Nothing ->
               H.modify_ _
                 { details = Just
                     { issues: []
-                    , pullRequests: prs
+                    , pullRequests: []
                     , issueCount: 0
                     , prCount: length prs
-                    , prChecks: checks
+                    , prChecks: Map.empty
                     }
                 }
             Just detail ->
               H.modify_ _
                 { details = Just detail
-                    { pullRequests = prs
+                    { pullRequests = []
                     , prCount = length prs
-                    , prChecks = checks
+                    , prChecks = Map.empty
                     }
                 }
+          traverse_
+            ( \pr@(PullRequest p) -> do
+                st3 <- H.get
+                when
+                  (st3.expanded == Just fullName)
+                  do
+                    let
+                      isVisible = not
+                        ( Set.member p.htmlUrl
+                            st3.hiddenItems
+                        )
+                    checks <-
+                      if isVisible then do
+                        cr <- H.liftAff $
+                          fetchCheckRuns st3.token
+                            fullName
+                            p.headSha
+                        cs <- H.liftAff $
+                          fetchCommitStatuses
+                            st3.token
+                            fullName
+                            p.headSha
+                        let
+                          runs = case cr of
+                            Right r -> r
+                            Left _ -> []
+                          statuses = case cs of
+                            Right s -> s
+                            Left _ -> []
+                        pure $ Just $ Tuple
+                          p.number
+                          (runs <> statuses)
+                      else pure Nothing
+                    st4 <- H.get
+                    case st4.details of
+                      Nothing -> pure unit
+                      Just detail ->
+                        H.modify_ _
+                          { details = Just
+                              detail
+                                { pullRequests =
+                                    Array.snoc
+                                      detail.pullRequests
+                                      pr
+                                , prChecks =
+                                    case checks of
+                                      Nothing ->
+                                        detail.prChecks
+                                      Just
+                                        ( Tuple n
+                                            c
+                                        ) ->
+                                        Map.insert n
+                                          c
+                                          detail.prChecks
+                                }
+                          }
+            )
+            prs
+        H.modify_ _ { prsLoading = false }
   RefreshPR prNum -> do
     st <- H.get
     case st.expanded of
@@ -307,12 +341,32 @@ handleAction = case _ of
         }
   ToggleItem key -> do
     st <- H.get
+    let
+      opening = not
+        (Set.member key st.expandedItems)
     H.modify_ _
       { expandedItems =
-          if Set.member key st.expandedItems then
+          if opening then
+            Set.insert key st.expandedItems
+          else
             Set.delete key st.expandedItems
-          else Set.insert key st.expandedItems
       }
+    when opening do
+      let
+        empty = case st.details of
+          Nothing -> true
+          Just d
+            | key == "section-issues" ->
+                null d.issues
+            | key == "section-prs" ->
+                null d.pullRequests
+            | otherwise -> false
+      when empty case key of
+        "section-issues" ->
+          handleAction RefreshIssues
+        "section-prs" ->
+          handleAction RefreshPRs
+        _ -> pure unit
   SetFilter txt ->
     H.modify_ _ { filterText = txt }
   DragStart fullName ->
@@ -411,6 +465,33 @@ handleAction = case _ of
         else Set.insert url st.hiddenItems
     H.modify_ _ { hiddenItems = newHidden }
     liftEffect $ saveHidden newHidden
+  CopyText text ->
+    liftEffect $ copyToClipboard text
+  ToggleIssueLabelFilter label -> do
+    st <- H.get
+    let
+      newFilters =
+        if Set.member label
+          st.issueLabelFilters
+        then
+          Set.delete label
+            st.issueLabelFilters
+        else
+          Set.insert label
+            st.issueLabelFilters
+    H.modify_ _ { issueLabelFilters = newFilters }
+    liftEffect $ saveIssueLabelFilters newFilters
+  TogglePRLabelFilter label -> do
+    st <- H.get
+    let
+      newFilters =
+        if Set.member label st.prLabelFilters
+        then
+          Set.delete label st.prLabelFilters
+        else
+          Set.insert label st.prLabelFilters
+    H.modify_ _ { prLabelFilters = newFilters }
+    liftEffect $ savePRLabelFilters newFilters
   ToggleTheme -> do
     st <- H.get
     let dark = not st.darkTheme
@@ -438,159 +519,3 @@ handleAction = case _ of
         , loading = false
         , darkTheme = true
         }
-
--- | Extract owner/repo from a GitHub URL or plain name.
-parseRepoName :: String -> Maybe String
-parseRepoName input =
-  let
-    stripped = Str.replaceAll
-      (Pattern "https://github.com/")
-      (Replacement "")
-      ( Str.replaceAll
-          (Pattern "http://github.com/")
-          (Replacement "")
-          (trim input)
-      )
-    parts = filter (_ /= "")
-      (Str.split (Pattern "/") stripped)
-  in
-    case parts of
-      [ owner, repo ] -> Just (owner <> "/" <> repo)
-      _ -> Nothing
-
--- | Fetch repos. If repoList is empty, seed from API.
-doRefresh
-  :: forall o
-   . String
-  -> H.HalogenM State Action () o Aff Unit
-doRefresh token = do
-  st <- H.get
-  if null st.repoList then do
-    result <- H.liftAff (fetchUserRepos token)
-    case result of
-      Left err ->
-        H.modify_ _
-          { error = Just err, loading = false }
-      Right { repos, rateLimit } -> do
-        let
-          seeded = take 25 repos
-          names = map
-            (\(Repo r) -> r.fullName)
-            seeded
-        H.modify_ _
-          { repos = seeded
-          , repoList = names
-          , rateLimit = rateLimit
-          , loading = false
-          , error = Nothing
-          }
-        liftEffect $ saveRepoList names
-  else do
-    traverse_
-      ( \name -> do
-          result <- H.liftAff (fetchRepo token name)
-          case result of
-            Left _ -> pure unit
-            Right repo -> do
-              st2 <- H.get
-              let
-                updated = upsertRepo repo st2.repos
-              H.modify_ _
-                { repos = orderRepos st2.repoList
-                    updated
-                }
-      )
-      st.repoList
-    H.modify_ _ { loading = false }
-
--- | Insert or update a repo in the array.
-upsertRepo :: Repo -> Array Repo -> Array Repo
-upsertRepo repo@(Repo r) repos =
-  if Array.any
-    (\(Repo x) -> x.fullName == r.fullName)
-    repos
-  then
-    map
-      ( \(Repo x) ->
-          if x.fullName == r.fullName then repo
-          else Repo x
-      )
-      repos
-  else Array.snoc repos repo
-
--- | Order repos to match the stored list.
-orderRepos :: Array String -> Array Repo -> Array Repo
-orderRepos order repos = Array.catMaybes $ map
-  ( \name -> Array.find
-      (\(Repo r) -> r.fullName == name)
-      repos
-  )
-  order
-
--- | Re-fetch a single PR and its check runs.
-refreshSinglePR
-  :: forall o
-   . String
-  -> String
-  -> Int
-  -> H.HalogenM State Action () o Aff Unit
-refreshSinglePR token fullName prNum = do
-  prResult <- H.liftAff
-    (fetchPR token fullName prNum)
-  case prResult of
-    Left _ -> pure unit
-    Right newPR@(PullRequest pr) -> do
-      cr <- H.liftAff $
-        fetchCheckRuns token fullName pr.headSha
-      cs <- H.liftAff $
-        fetchCommitStatuses token fullName
-          pr.headSha
-      let
-        runs = case cr of
-          Right r -> r
-          Left _ -> []
-        statuses = case cs of
-          Right s -> s
-          Left _ -> []
-        newChecks = runs <> statuses
-      st <- H.get
-      case st.details of
-        Nothing ->
-          H.modify_ _
-            { details = Just
-                { issues: []
-                , pullRequests: [ newPR ]
-                , issueCount: 0
-                , prCount: 1
-                , prChecks: Map.singleton prNum
-                    newChecks
-                }
-            }
-        Just detail ->
-          let
-            updated = map
-              ( \(PullRequest p) ->
-                  if p.number == prNum then newPR
-                  else PullRequest p
-              )
-              detail.pullRequests
-          in
-            H.modify_ _
-              { details = Just detail
-                  { pullRequests = updated
-                  , prChecks = Map.insert prNum
-                      newChecks
-                      detail.prChecks
-                  }
-              }
-
-moveItem :: String -> String -> Array String -> Array String
-moveItem src target order =
-  let
-    without = filter (_ /= src) order
-  in
-    case findIndex (_ == target) without of
-      Nothing -> order
-      Just idx ->
-        fromMaybe order
-          (Array.insertAt idx src without)

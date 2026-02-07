@@ -8,6 +8,10 @@ module Storage
   , saveHidden
   , loadTheme
   , saveTheme
+  , loadIssueLabelFilters
+  , saveIssueLabelFilters
+  , loadPRLabelFilters
+  , savePRLabelFilters
   , clearAll
   ) where
 
@@ -38,6 +42,12 @@ storageKeyHidden = "gh-dashboard-hidden"
 
 storageKeyTheme :: String
 storageKeyTheme = "gh-dashboard-dark-theme"
+
+storageKeyIssueLabels :: String
+storageKeyIssueLabels = "gh-dashboard-issue-labels"
+
+storageKeyPRLabels :: String
+storageKeyPRLabels = "gh-dashboard-pr-labels"
 
 loadToken :: Effect String
 loadToken = do
@@ -89,6 +99,43 @@ saveTheme dark = do
   s <- localStorage w
   Storage.setItem storageKeyTheme (show dark) s
 
+loadIssueLabelFilters :: Effect (Set.Set String)
+loadIssueLabelFilters = loadStringSet storageKeyIssueLabels
+
+saveIssueLabelFilters :: Set.Set String -> Effect Unit
+saveIssueLabelFilters = saveStringSet storageKeyIssueLabels
+
+loadPRLabelFilters :: Effect (Set.Set String)
+loadPRLabelFilters = loadStringSet storageKeyPRLabels
+
+savePRLabelFilters :: Set.Set String -> Effect Unit
+savePRLabelFilters = saveStringSet storageKeyPRLabels
+
+loadStringSet :: String -> Effect (Set.Set String)
+loadStringSet key = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem key s
+  pure $ case raw of
+    Nothing -> Set.empty
+    Just str ->
+      case
+        jsonParser str
+          >>= (lmap printJsonDecodeError <<< decodeJson)
+        of
+        Right (arr :: Array String) ->
+          Set.fromFoldable arr
+        Left _ -> Set.empty
+
+saveStringSet :: String -> Set.Set String -> Effect Unit
+saveStringSet key vals = do
+  w <- window
+  s <- localStorage w
+  let
+    arr :: Array String
+    arr = Set.toUnfoldable vals
+  Storage.setItem key (stringify (encodeJson arr)) s
+
 clearAll :: Effect Unit
 clearAll = do
   w <- window
@@ -97,6 +144,8 @@ clearAll = do
   Storage.removeItem storageKeyRepos s
   Storage.removeItem storageKeyHidden s
   Storage.removeItem storageKeyTheme s
+  Storage.removeItem storageKeyIssueLabels s
+  Storage.removeItem storageKeyPRLabels s
 
 loadHidden :: Effect (Set.Set String)
 loadHidden = do

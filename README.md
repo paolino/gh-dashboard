@@ -10,17 +10,23 @@ Repository dashboard for GitHub — browse your repos, open issues and pull requ
 
 ## Features
 
-- **Repo list** — first connection seeds 15 most recently updated repos; order persists in localStorage
+- **Repo list** — first connection seeds 25 most recently updated repos; order persists in localStorage
 - **Drag-and-drop reordering** — grab the ☰ handle to rearrange repos
-- **Add / remove repos** — `+` button to add any public or private repo by URL; ✕ button to remove
+- **Add / remove repos** — `+` button to add any public or private repo by URL; trash button to remove
 - **Expandable detail panels** — click a repo row to reveal its issues and pull requests sections
 - **Granular refresh** — ↻ buttons at every level: section headings reload all issues or PRs; per-row buttons refresh a single issue or PR (including CI checks)
-- **Collapsible sections** — Issues and PRs sections expand/collapse independently
+- **Progressive PR loading** — PRs appear one at a time as their CI check runs are fetched
+- **Collapsible sections** — Issues and PRs sections expand/collapse independently; expanding an empty section auto-triggers a refresh
 - **Hide / unhide items** — hide individual issues or PRs; hidden items are grouped in a collapsible "Hidden" section within each group, persisted across sessions
+- **Label filtering** — clickable label selector per section (issues and PRs independently); multi-select with OR logic; persisted in localStorage
+- **CI status filtering** — PR check run statuses (success, failure, pending) appear as filterable labels alongside regular labels
 - **Inline markdown** — click an issue or PR to render its body as markdown
+- **Copy to clipboard** — copy issue/PR titles with one click
 - **Filter** — live text filter across repo names and descriptions
+- **Dark / light theme** — toggle between dark and light themes; persisted in localStorage
+- **Tooltips** — hover any icon for a description of its action
 - **Rate limit display** — shows remaining GitHub API quota
-- **Reset** — clears all saved data (token, repo list, hidden items)
+- **Reset** — clears all saved data (token, repo list, hidden items, theme, filters)
 
 ## Stack
 

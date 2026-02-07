@@ -138,6 +138,7 @@ renderToolbar state =
                     <> activeIf state.showAddRepo
                 )
             )
+        , HP.title "Add repository"
         ]
         [ HH.text "+" ]
     , HH.input
@@ -147,30 +148,28 @@ renderToolbar state =
         , HP.class_ (HH.ClassName "filter-input")
         ]
     , renderRateLimit state.rateLimit
-    , HH.button
+    , HH.div
+        [ HP.class_
+            (HH.ClassName "toolbar-spacer")
+        ]
+        []
+    , HH.span
         [ HE.onClick \_ -> ToggleTheme
         , HP.class_
-            ( HH.ClassName
-                ( "btn-back"
-                    <> activeIf state.darkTheme
-                )
-            )
+            (HH.ClassName "theme-toggle")
+        , HP.title "Toggle theme"
         ]
         [ HH.text
             ( if state.darkTheme then "\x263E"
               else "\x2600"
             )
         ]
-    , HH.div
-        [ HP.class_
-            (HH.ClassName "toolbar-spacer")
-        ]
-        []
     , HH.a
         [ HP.href
             "https://github.com/paolino/gh-dashboard"
         , HP.target "_blank"
         , HP.class_ (HH.ClassName "link-btn")
+        , HP.title "Source code"
         ]
         [ HH.img
             [ HP.src
@@ -182,6 +181,7 @@ renderToolbar state =
     , HH.button
         [ HE.onClick \_ -> ResetAll
         , HP.class_ (HH.ClassName "btn-hide")
+        , HP.title "Reset all data"
         ]
         [ HH.text "\x2620" ]
     ]

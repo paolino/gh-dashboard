@@ -29,6 +29,9 @@ data Action
   | SubmitAddRepo
   | RemoveRepo String
   | HideItem String
+  | CopyText String
+  | ToggleIssueLabelFilter String
+  | TogglePRLabelFilter String
   | ToggleTheme
   | ResetAll
 
@@ -51,4 +54,8 @@ type State =
   , showAddRepo :: Boolean
   , addRepoInput :: String
   , darkTheme :: Boolean
+  , issuesLoading :: Boolean
+  , prsLoading :: Boolean
+  , issueLabelFilters :: Set String
+  , prLabelFilters :: Set String
   }
