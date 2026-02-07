@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GH Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; }
+    .error { color: #f44336; margin-top: 12px; }
+    .muted { color: #9e9e9e; }
+    .form-container { max-width: 480px; margin: 80px auto 0; }
+    .form-container h1 { color: #e0e0e0; margin-bottom: 4px; }
+    .form { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+    .input { padding: 10px 12px; border: 1px solid #333; border-radius: 6px; background: #16213e; color: #e0e0e0; font-size: 14px; outline: none; }
+    .input:focus { border-color: #2196f3; }
+    .input::placeholder { color: #666; }
+    .btn { padding: 10px 16px; border: none; border-radius: 6px; background: #2196f3; color: #fff; font-size: 14px; cursor: pointer; }
+    .btn:hover { background: #1976d2; }
+    .hint { color: #666; font-size: 12px; margin-top: 12px; }
+    .instructions { margin-top: 24px; color: #9e9e9e; font-size: 13px; line-height: 1.6; }
+    .instructions h3 { color: #777; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; margin: 20px 0 8px; }
+    .instructions ol, .instructions ul { padding-left: 20px; margin: 0; }
+    .instructions li { margin-bottom: 4px; }
+    .instructions code { color: #2196f3; background: #16213e; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+    .toolbar-timer { display: flex; align-items: center; gap: 6px; color: #666; font-size: 12px; margin-left: auto; font-variant-numeric: tabular-nums; }
+    .btn-small { padding: 4px 10px; border: 1px solid #252542; border-radius: 4px; background: #252542; color: #9e9e9e; font-size: 12px; cursor: pointer; }
+    .btn-small:hover { background: #2a2a50; border-color: #2a2a50; color: #e0e0e0; }
+    .btn-small.active { background: #2196f3; color: #fff; border-color: #2196f3; }
+    .btn-back { padding: 6px 14px; border: 1px solid #252542; border-radius: 6px; background: #252542; color: #9e9e9e; font-size: 13px; cursor: pointer; }
+    .btn-back:hover { background: #2a2a50; border-color: #2a2a50; color: #e0e0e0; }
+    .filter-input { padding: 6px 10px; border: 1px solid #333; border-radius: 4px; background: #16213e; color: #e0e0e0; font-size: 12px; outline: none; width: 180px; }
+    .filter-input:focus { border-color: #2196f3; }
+    .filter-input::placeholder { color: #555; }
+    .rate-limit { color: #666; font-size: 11px; }
+    .rate-limit-warn { color: #f44336; }
+    .repo-table { width: 100%; border-collapse: collapse; }
+    .repo-table th { text-align: left; color: #777; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; border-bottom: 1px solid #333; }
+    .repo-row { cursor: pointer; transition: background 0.15s; }
+    .repo-row:hover { background: #16213e; }
+    .repo-row td { padding: 10px 12px; border-bottom: 1px solid #252542; }
+    .repo-row.expanded { background: #16213e; }
+    .repo-name { color: #2196f3; font-weight: 500; font-size: 14px; text-decoration: none; }
+    .repo-name:hover { text-decoration: underline; }
+    .repo-desc { color: #9e9e9e; font-size: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+    .badge-lang { background: #1e3a5f; color: #64b5f6; }
+    .badge-private { background: #3e2723; color: #ffab91; }
+    .badge-public { background: #1b5e20; color: #a5d6a7; }
+    .badge-issues { background: #4a1942; color: #ce93d8; }
+    .badge-prs { background: #0d3b66; color: #81d4fa; }
+    .badge-zero { opacity: 0.4; }
+    .repo-date { color: #666; font-size: 12px; white-space: nowrap; }
+    .detail-panel { background: #0f1525; border-bottom: 1px solid #333; }
+    .detail-panel td { padding: 16px 12px; }
+    .detail-section { margin-bottom: 16px; }
+    .detail-section:last-child { margin-bottom: 0; }
+    .detail-heading { color: #777; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .detail-table { width: 100%; border-collapse: collapse; }
+    .detail-table td { padding: 6px 8px; border-bottom: 1px solid #1a1a2e; font-size: 13px; }
+    .detail-link { color: #2196f3; text-decoration: none; }
+    .detail-link:hover { text-decoration: underline; }
+    .detail-author { color: #777; font-size: 12px; }
+    .detail-date { color: #555; font-size: 11px; white-space: nowrap; }
+    .detail-labels { display: inline-flex; gap: 4px; margin-left: 8px; }
+    .label-tag { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: #252542; color: #9e9e9e; }
+    .draft-tag { background: #3e2723; color: #ffab91; }
+    .loading-spinner { color: #666; font-size: 13px; padding: 12px 0; }
+    .empty-msg { color: #555; font-size: 13px; font-style: italic; }
+    @keyframes pulse { 50% { opacity: 0.6; } }
+    .loading { animation: pulse 1.5s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="index.js"></script>
+</body>
+</html>

@@ -1,0 +1,570 @@
+-- | View — all render functions for the dashboard.
+module View
+  ( Action(..)
+  , SortField(..)
+  , SortDir(..)
+  , State
+  , renderTokenForm
+  , renderDashboard
+  ) where
+
+import Prelude
+
+import Data.Array (null)
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.String (take)
+import GitHub (RateLimit)
+import Halogen.HTML as HH
+import Halogen.HTML.Events as HE
+import Halogen.HTML.Properties as HP
+import Types (Issue(..), Label, PullRequest(..), Repo(..), RepoDetail)
+
+-- | Sort fields for the repo table.
+data SortField = SortName | SortUpdated | SortIssues
+
+derive instance Eq SortField
+
+-- | Sort direction.
+data SortDir = Asc | Desc
+
+derive instance Eq SortDir
+
+-- | Actions emitted by the view.
+data Action
+  = Initialize
+  | Tick
+  | SetToken String
+  | SubmitToken
+  | Refresh
+  | ToggleExpand String
+  | SetSort SortField
+  | SetFilter String
+  | ChangeInterval Int
+  | ResetAll
+
+-- | Application state (referenced by view).
+type State =
+  { token :: String
+  , repos :: Array Repo
+  , expanded :: Maybe String
+  , details :: Maybe RepoDetail
+  , detailLoading :: Boolean
+  , loading :: Boolean
+  , error :: Maybe String
+  , rateLimit :: Maybe RateLimit
+  , interval :: Int
+  , secondsLeft :: Int
+  , sortField :: SortField
+  , sortDir :: SortDir
+  , filterText :: String
+  , hasToken :: Boolean
+  }
+
+-- | Token input form shown when no token is set.
+renderTokenForm
+  :: forall w
+   . State
+  -> HH.HTML w Action
+renderTokenForm state =
+  HH.div
+    [ HP.class_ (HH.ClassName "form-container") ]
+    [ HH.h1_ [ HH.text "GH Dashboard" ]
+    , HH.p
+        [ HP.class_ (HH.ClassName "muted") ]
+        [ HH.text
+            "Your GitHub repositories at a glance"
+        ]
+    , HH.div
+        [ HP.class_ (HH.ClassName "form") ]
+        [ HH.input
+            [ HP.type_ HP.InputPassword
+            , HP.placeholder "GitHub personal access token"
+            , HP.value state.token
+            , HE.onValueInput SetToken
+            , HP.class_ (HH.ClassName "input")
+            ]
+        , HH.button
+            [ HE.onClick \_ -> SubmitToken
+            , HP.class_ (HH.ClassName "btn")
+            ]
+            [ HH.text "Connect" ]
+        ]
+    , case state.error of
+        Just err ->
+          HH.div
+            [ HP.class_ (HH.ClassName "error") ]
+            [ HH.text err ]
+        Nothing -> HH.text ""
+    , HH.div
+        [ HP.class_ (HH.ClassName "instructions") ]
+        [ HH.h3_ [ HH.text "Getting started" ]
+        , HH.ol_
+            [ HH.li_
+                [ HH.text "Create a "
+                , HH.strong_
+                    [ HH.text "GitHub token" ]
+                , HH.text " with "
+                , HH.code_ [ HH.text "repo" ]
+                , HH.text " scope"
+                ]
+            , HH.li_
+                [ HH.text
+                    "Paste it above and click Connect"
+                ]
+            , HH.li_
+                [ HH.text
+                    "Browse your repos, expand for issues and PRs"
+                ]
+            ]
+        ]
+    ]
+
+-- | Full dashboard view with toolbar and repo table.
+renderDashboard
+  :: forall w
+   . State
+  -> Array Repo
+  -> HH.HTML w Action
+renderDashboard state repos =
+  HH.div_
+    [ renderToolbar state
+    , case state.error of
+        Just err ->
+          HH.div
+            [ HP.class_ (HH.ClassName "error") ]
+            [ HH.text err ]
+        Nothing -> HH.text ""
+    , if null repos then
+        HH.p
+          [ HP.class_ (HH.ClassName "muted") ]
+          [ HH.text "No repositories found." ]
+      else
+        renderRepoTable state repos
+    ]
+
+-- | Toolbar with refresh, timer, sort, filter.
+renderToolbar
+  :: forall w. State -> HH.HTML w Action
+renderToolbar state =
+  HH.div
+    [ HP.class_ (HH.ClassName "toolbar") ]
+    [ HH.button
+        [ HE.onClick \_ -> Refresh
+        , HP.class_ (HH.ClassName "btn-back")
+        ]
+        [ HH.text
+            ( if state.loading then "Loading..."
+              else "Refresh"
+            )
+        ]
+    , HH.button
+        [ HE.onClick \_ -> SetSort SortName
+        , HP.class_
+            ( HH.ClassName
+                ( "btn-small"
+                    <> activeIf
+                      (state.sortField == SortName)
+                )
+            )
+        ]
+        [ HH.text "Name" ]
+    , HH.button
+        [ HE.onClick \_ -> SetSort SortUpdated
+        , HP.class_
+            ( HH.ClassName
+                ( "btn-small"
+                    <> activeIf
+                      ( state.sortField
+                          == SortUpdated
+                      )
+                )
+            )
+        ]
+        [ HH.text "Updated" ]
+    , HH.button
+        [ HE.onClick \_ -> SetSort SortIssues
+        , HP.class_
+            ( HH.ClassName
+                ( "btn-small"
+                    <> activeIf
+                      ( state.sortField
+                          == SortIssues
+                      )
+                )
+            )
+        ]
+        [ HH.text "Issues" ]
+    , HH.input
+        [ HP.placeholder "Filter repos..."
+        , HP.value state.filterText
+        , HE.onValueInput SetFilter
+        , HP.class_ (HH.ClassName "filter-input")
+        ]
+    , HH.div
+        [ HP.class_ (HH.ClassName "toolbar-timer") ]
+        [ HH.button
+            [ HE.onClick \_ -> ChangeInterval (-5)
+            , HP.class_ (HH.ClassName "btn-small")
+            ]
+            [ HH.text "-" ]
+        , HH.text
+            ( show state.secondsLeft <> "s / "
+                <> show state.interval
+                <> "s"
+            )
+        , HH.button
+            [ HE.onClick \_ -> ChangeInterval 5
+            , HP.class_ (HH.ClassName "btn-small")
+            ]
+            [ HH.text "+" ]
+        , renderRateLimit state.rateLimit
+        ]
+    , HH.button
+        [ HE.onClick \_ -> ResetAll
+        , HP.class_ (HH.ClassName "btn-small")
+        ]
+        [ HH.text "Reset" ]
+    ]
+
+activeIf :: Boolean -> String
+activeIf true = " active"
+activeIf false = ""
+
+-- | Rate limit display.
+renderRateLimit
+  :: forall w i. Maybe RateLimit -> HH.HTML w i
+renderRateLimit = case _ of
+  Nothing -> HH.text ""
+  Just rl ->
+    HH.span
+      [ HP.class_
+          ( HH.ClassName
+              ( if rl.remaining < 100 then
+                  "rate-limit rate-limit-warn"
+                else "rate-limit"
+              )
+          )
+      ]
+      [ HH.text
+          ( show rl.remaining <> "/"
+              <> show rl.limit
+          )
+      ]
+
+-- | The repo table with rows.
+renderRepoTable
+  :: forall w
+   . State
+  -> Array Repo
+  -> HH.HTML w Action
+renderRepoTable state repos =
+  HH.table
+    [ HP.class_ (HH.ClassName "repo-table") ]
+    [ HH.thead_
+        [ HH.tr_
+            [ HH.th_ [ HH.text "Repository" ]
+            , HH.th_ [ HH.text "Description" ]
+            , HH.th_ [ HH.text "Lang" ]
+            , HH.th_ [ HH.text "Vis" ]
+            , HH.th_ [ HH.text "Issues" ]
+            , HH.th_ [ HH.text "Updated" ]
+            ]
+        ]
+    , HH.tbody_
+        (repos >>= \r -> renderRepoRow state r)
+    ]
+
+-- | A single repo row, plus detail panel if expanded.
+renderRepoRow
+  :: forall w
+   . State
+  -> Repo
+  -> Array (HH.HTML w Action)
+renderRepoRow state (Repo r) =
+  let
+    isExpanded = state.expanded == Just r.fullName
+    rowClass =
+      if isExpanded then "repo-row expanded"
+      else "repo-row"
+  in
+    [ HH.tr
+        [ HE.onClick \_ -> ToggleExpand r.fullName
+        , HP.class_ (HH.ClassName rowClass)
+        ]
+        [ HH.td_
+            [ HH.a
+                [ HP.href r.htmlUrl
+                , HP.target "_blank"
+                , HP.class_
+                    (HH.ClassName "repo-name")
+                ]
+                [ HH.text r.name ]
+            ]
+        , HH.td_
+            [ HH.span
+                [ HP.class_
+                    (HH.ClassName "repo-desc")
+                ]
+                [ HH.text
+                    (fromMaybe "" r.description)
+                ]
+            ]
+        , HH.td_ [ renderLangBadge r.language ]
+        , HH.td_
+            [ renderVisBadge r.visibility ]
+        , HH.td_
+            [ renderCountBadge "badge-issues"
+                r.openIssuesCount
+            ]
+        , HH.td_
+            [ HH.span
+                [ HP.class_
+                    (HH.ClassName "repo-date")
+                ]
+                [ HH.text (formatDate r.updatedAt) ]
+            ]
+        ]
+    ]
+      <>
+        if isExpanded then
+          [ renderDetailPanel state ]
+        else []
+
+-- | Language badge.
+renderLangBadge
+  :: forall w i. Maybe String -> HH.HTML w i
+renderLangBadge = case _ of
+  Nothing -> HH.text ""
+  Just lang ->
+    HH.span
+      [ HP.class_ (HH.ClassName "badge badge-lang") ]
+      [ HH.text lang ]
+
+-- | Visibility badge.
+renderVisBadge
+  :: forall w i. String -> HH.HTML w i
+renderVisBadge vis =
+  HH.span
+    [ HP.class_
+        ( HH.ClassName
+            ( "badge "
+                <>
+                  if vis == "private" then
+                    "badge-private"
+                  else "badge-public"
+            )
+        )
+    ]
+    [ HH.text vis ]
+
+-- | Count badge (issues/PRs).
+renderCountBadge
+  :: forall w i. String -> Int -> HH.HTML w i
+renderCountBadge cls n =
+  HH.span
+    [ HP.class_
+        ( HH.ClassName
+            ( "badge " <> cls
+                <>
+                  if n == 0 then " badge-zero"
+                  else ""
+            )
+        )
+    ]
+    [ HH.text (show n) ]
+
+-- | Detail panel shown below expanded row.
+renderDetailPanel
+  :: forall w. State -> HH.HTML w Action
+renderDetailPanel state =
+  HH.tr
+    [ HP.class_ (HH.ClassName "detail-panel") ]
+    [ HH.td
+        [ HP.colSpan 6 ]
+        [ if state.detailLoading then
+            HH.div
+              [ HP.class_
+                  (HH.ClassName "loading-spinner")
+              ]
+              [ HH.text "Loading issues and PRs..." ]
+          else case state.details of
+            Nothing ->
+              HH.div
+                [ HP.class_
+                    (HH.ClassName "loading-spinner")
+                ]
+                [ HH.text "Loading..." ]
+            Just detail ->
+              HH.div_
+                [ renderIssuesSection
+                    detail.issues
+                    detail.issueCount
+                , renderPRsSection
+                    detail.pullRequests
+                    detail.prCount
+                ]
+        ]
+    ]
+
+-- | Issues sub-section.
+renderIssuesSection
+  :: forall w i
+   . Array Issue
+  -> Int
+  -> HH.HTML w i
+renderIssuesSection issues count =
+  HH.div
+    [ HP.class_ (HH.ClassName "detail-section") ]
+    [ HH.div
+        [ HP.class_
+            (HH.ClassName "detail-heading")
+        ]
+        [ HH.text
+            ("Issues (" <> show count <> ")")
+        ]
+    , if null issues then
+        HH.div
+          [ HP.class_ (HH.ClassName "empty-msg") ]
+          [ HH.text "No open issues" ]
+      else
+        HH.table
+          [ HP.class_
+              (HH.ClassName "detail-table")
+          ]
+          [ HH.tbody_
+              (map renderIssueRow issues)
+          ]
+    ]
+
+-- | Single issue row.
+renderIssueRow
+  :: forall w i. Issue -> HH.HTML w i
+renderIssueRow (Issue i) =
+  HH.tr_
+    [ HH.td_
+        [ HH.a
+            [ HP.href i.htmlUrl
+            , HP.target "_blank"
+            , HP.class_
+                (HH.ClassName "detail-link")
+            ]
+            [ HH.text
+                ("#" <> show i.number <> " " <> i.title)
+            ]
+        , renderLabels i.labels
+        ]
+    , HH.td_
+        [ HH.span
+            [ HP.class_
+                (HH.ClassName "detail-author")
+            ]
+            [ HH.text i.userLogin ]
+        ]
+    , HH.td_
+        [ HH.span
+            [ HP.class_
+                (HH.ClassName "detail-date")
+            ]
+            [ HH.text (formatDate i.createdAt) ]
+        ]
+    ]
+
+-- | PRs sub-section.
+renderPRsSection
+  :: forall w i
+   . Array PullRequest
+  -> Int
+  -> HH.HTML w i
+renderPRsSection prs count =
+  HH.div
+    [ HP.class_ (HH.ClassName "detail-section") ]
+    [ HH.div
+        [ HP.class_
+            (HH.ClassName "detail-heading")
+        ]
+        [ HH.text
+            ("Pull Requests (" <> show count <> ")")
+        ]
+    , if null prs then
+        HH.div
+          [ HP.class_ (HH.ClassName "empty-msg") ]
+          [ HH.text "No open pull requests" ]
+      else
+        HH.table
+          [ HP.class_
+              (HH.ClassName "detail-table")
+          ]
+          [ HH.tbody_ (map renderPRRow prs) ]
+    ]
+
+-- | Single PR row.
+renderPRRow
+  :: forall w i. PullRequest -> HH.HTML w i
+renderPRRow (PullRequest pr) =
+  HH.tr_
+    [ HH.td_
+        ( [ HH.a
+              [ HP.href pr.htmlUrl
+              , HP.target "_blank"
+              , HP.class_
+                  (HH.ClassName "detail-link")
+              ]
+              [ HH.text
+                  ( "#" <> show pr.number <> " "
+                      <> pr.title
+                  )
+              ]
+          , renderLabels pr.labels
+          ]
+            <>
+              if pr.draft then
+                [ HH.span
+                    [ HP.class_
+                        ( HH.ClassName
+                            "label-tag draft-tag"
+                        )
+                    ]
+                    [ HH.text "draft" ]
+                ]
+              else []
+        )
+    , HH.td_
+        [ HH.span
+            [ HP.class_
+                (HH.ClassName "detail-author")
+            ]
+            [ HH.text pr.userLogin ]
+        ]
+    , HH.td_
+        [ HH.span
+            [ HP.class_
+                (HH.ClassName "detail-date")
+            ]
+            [ HH.text (formatDate pr.createdAt) ]
+        ]
+    ]
+
+-- | Render label tags.
+renderLabels
+  :: forall w i. Array Label -> HH.HTML w i
+renderLabels labels =
+  if null labels then HH.text ""
+  else
+    HH.span
+      [ HP.class_
+          (HH.ClassName "detail-labels")
+      ]
+      ( map
+          ( \l ->
+              HH.span
+                [ HP.class_
+                    (HH.ClassName "label-tag")
+                ]
+                [ HH.text l.name ]
+          )
+          labels
+      )
+
+-- | Format ISO date to short form (YYYY-MM-DD).
+formatDate :: String -> String
+formatDate = take 10
