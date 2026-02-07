@@ -15,6 +15,7 @@ import Data.Argonaut.Decode.Class (class DecodeJson)
 import Data.Argonaut.Decode.Combinators ((.:), (.:?))
 import Data.Argonaut.Decode.Error (JsonDecodeError(..))
 import Data.Either (Either(..))
+import Data.Map (Map)
 import Data.Maybe (Maybe(..), fromMaybe)
 
 -- | A label on an issue or PR.
@@ -116,6 +117,7 @@ newtype PullRequest = PullRequest
   , labels :: Array Label
   , assignees :: Array Assignee
   , body :: Maybe String
+  , headSha :: String
   }
 
 instance DecodeJson PullRequest where
@@ -132,6 +134,8 @@ instance DecodeJson PullRequest where
       labels_ <- obj .: "labels"
       assignees_ <- fromMaybe [] <$> obj .:? "assignees"
       body_ <- obj .:? "body"
+      headObj <- obj .: "head"
+      headSha_ <- headObj .: "sha"
       pure $ PullRequest
         { number: number_
         , title: title_
@@ -142,6 +146,7 @@ instance DecodeJson PullRequest where
         , labels: labels_
         , assignees: assignees_
         , body: body_
+        , headSha: headSha_
         }
 
 -- | Cached detail for an expanded repo.
@@ -150,4 +155,5 @@ type RepoDetail =
   , pullRequests :: Array PullRequest
   , issueCount :: Int
   , prCount :: Int
+  , prStatuses :: Map Int String
   }
