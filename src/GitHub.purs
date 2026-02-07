@@ -5,7 +5,9 @@ module GitHub
   , fetchAllPages
   , fetchUserRepos
   , fetchRepoIssues
+  , fetchIssue
   , fetchRepoPRs
+  , fetchPR
   , fetchRepo
   , fetchCheckRuns
   , fetchCommitStatuses
@@ -211,6 +213,24 @@ fetchRepoIssues token fullName = do
     )
     result
 
+-- | Fetch a single issue by number.
+fetchIssue
+  :: String
+  -> String
+  -> Int
+  -> Aff (Either String Issue)
+fetchIssue token fullName number = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+        <> "/issues/"
+        <> show number
+    )
+  pure $ result >>= \r ->
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right issue -> Right issue
+
 -- | Fetch a single repo by full name (owner/repo).
 fetchRepo
   :: String
@@ -238,6 +258,24 @@ fetchRepoPRs token fullName = do
         <> "/pulls?state=open&per_page=100"
     )
   pure $ map _.items result
+
+-- | Fetch a single pull request by number.
+fetchPR
+  :: String
+  -> String
+  -> Int
+  -> Aff (Either String PullRequest)
+fetchPR token fullName number = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+        <> "/pulls/"
+        <> show number
+    )
+  pure $ result >>= \r ->
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right pr -> Right pr
 
 -- | Fetch check-runs for a SHA.
 fetchCheckRuns

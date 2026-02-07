@@ -10,6 +10,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
 import Halogen.HTML as HH
+import Halogen.HTML.Core (AttrName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Types (CheckRun(..), Issue(..), PullRequest(..))
@@ -39,11 +40,10 @@ renderDetailPanel state =
               [ HH.text "Loading issues and PRs..." ]
           else case state.details of
             Nothing ->
-              HH.div
-                [ HP.class_
-                    (HH.ClassName "loading-spinner")
+              HH.div_
+                [ renderIssuesSection state [] 0
+                , renderPRsSection state [] 0
                 ]
-                [ HH.text "Loading..." ]
             Just detail ->
               HH.div_
                 [ renderIssuesSection state
@@ -94,6 +94,7 @@ renderIssuesSection state issues count =
                   <> show count
                   <> ")"
               )
+          , refreshButton RefreshIssues
           ]
       , if not isOpen then HH.text ""
         else if null issues then
@@ -223,7 +224,10 @@ renderIssueRow state isHidden (Issue i) =
         , HH.td_
             [ linkButton i.htmlUrl ]
         , HH.td_
-            [ hideButton i.htmlUrl isHidden ]
+            [ refreshButton
+                (RefreshIssue i.number)
+            , hideButton i.htmlUrl isHidden
+            ]
         ]
     ]
       <>
@@ -269,6 +273,7 @@ renderPRsSection state prs count =
                   <> show count
                   <> ")"
               )
+          , refreshButton RefreshPRs
           ]
       , if not isOpen then HH.text ""
         else if null prs then
@@ -415,7 +420,10 @@ renderPRRow state isHidden (PullRequest pr) =
         , HH.td_
             [ linkButton pr.htmlUrl ]
         , HH.td_
-            [ hideButton pr.htmlUrl isHidden ]
+            [ refreshButton
+                (RefreshPR pr.number)
+            , hideButton pr.htmlUrl isHidden
+            ]
         ]
     ]
       <>
@@ -424,6 +432,18 @@ renderPRRow state isHidden (PullRequest pr) =
             <> renderCheckRuns state pr.number
               checks
         else []
+
+-- | Refresh button for a single item.
+refreshButton
+  :: forall w. Action -> HH.HTML w Action
+refreshButton action =
+  HH.button
+    [ HE.onClick \_ -> action
+    , HP.class_ (HH.ClassName "btn-hide")
+    , HP.attr (AttrName "onclick")
+        "event.stopPropagation()"
+    ]
+    [ HH.text "\x21BB" ]
 
 -- | Hide/unhide toggle button.
 hideButton

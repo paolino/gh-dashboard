@@ -155,42 +155,7 @@ renderToolbar state =
         , HE.onValueInput SetFilter
         , HP.class_ (HH.ClassName "filter-input")
         ]
-    , HH.div
-        [ HP.class_ (HH.ClassName "toolbar-timer") ]
-        [ HH.button
-            [ HE.onClick \_ -> ToggleAutoRefresh
-            , HP.class_
-                ( HH.ClassName
-                    ( "btn-small"
-                        <> activeIf state.autoRefresh
-                    )
-                )
-            ]
-            [ HH.text
-                ( if state.autoRefresh then
-                    "\x25B6 Auto"
-                  else "\x23F8 Paused"
-                )
-            ]
-        , HH.button
-            [ HE.onClick \_ -> ChangeInterval (-5)
-            , HP.class_ (HH.ClassName "btn-small")
-            ]
-            [ HH.text "-" ]
-        , HH.text
-            ( if state.autoRefresh then
-                show state.secondsLeft <> "s / "
-                  <> show state.interval
-                  <> "s"
-              else show state.interval <> "s"
-            )
-        , HH.button
-            [ HE.onClick \_ -> ChangeInterval 5
-            , HP.class_ (HH.ClassName "btn-small")
-            ]
-            [ HH.text "+" ]
-        , renderRateLimit state.rateLimit
-        ]
+    , renderRateLimit state.rateLimit
     , HH.a
         [ HP.href
             "https://github.com/paolino/gh-dashboard"
