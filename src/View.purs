@@ -14,13 +14,13 @@ import Data.Array (null)
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.String (take)
+import Data.String (joinWith, take)
 import GitHub (RateLimit)
 import Halogen.HTML as HH
 import Halogen.HTML.Core (PropName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
-import Types (Issue(..), Label, PullRequest(..), Repo(..), RepoDetail)
+import Types (Assignee, Issue(..), Label, PullRequest(..), Repo(..), RepoDetail)
 
 foreign import parseMarkdownImpl :: String -> String
 
@@ -483,7 +483,8 @@ renderIssuesSection state issues count =
             [ HP.class_
                 (HH.ClassName "detail-table")
             ]
-            [ HH.tbody_
+            [ detailHead
+            , HH.tbody_
                 ( issues >>= renderIssueRow state
                 )
             ]
@@ -517,6 +518,8 @@ renderIssueRow state (Issue i) =
                 ]
             , renderLabels i.labels
             ]
+        , HH.td_
+            [ renderAssignees i.assignees ]
         , HH.td_
             [ HH.span
                 [ HP.class_
@@ -578,7 +581,8 @@ renderPRsSection state prs count =
             [ HP.class_
                 (HH.ClassName "detail-table")
             ]
-            [ HH.tbody_
+            [ detailHead
+            , HH.tbody_
                 (prs >>= renderPRRow state)
             ]
       ]
@@ -624,6 +628,8 @@ renderPRRow state (PullRequest pr) =
                   else []
             )
         , HH.td_
+            [ renderAssignees pr.assignees ]
+        , HH.td_
             [ HH.span
                 [ HP.class_
                     (HH.ClassName "detail-author")
@@ -660,7 +666,7 @@ renderMarkdownRow = case _ of
     [ HH.tr
         [ HP.class_ (HH.ClassName "detail-row") ]
         [ HH.td
-            [ HP.colSpan 4 ]
+            [ HP.colSpan 5 ]
             [ HH.div
                 [ HP.class_
                     (HH.ClassName "detail-body")
@@ -684,6 +690,33 @@ linkButton url =
     , HP.class_ (HH.ClassName "link-btn")
     ]
     [ HH.text "\x2197" ]
+
+-- | Column headers for detail tables.
+detailHead :: forall w i. HH.HTML w i
+detailHead =
+  HH.thead_
+    [ HH.tr_
+        [ HH.th_ [ HH.text "Title" ]
+        , HH.th_ [ HH.text "Assignees" ]
+        , HH.th_ [ HH.text "Author" ]
+        , HH.th_ [ HH.text "Date" ]
+        , HH.th_ []
+        ]
+    ]
+
+-- | Render assignees.
+renderAssignees
+  :: forall w i. Array Assignee -> HH.HTML w i
+renderAssignees assignees =
+  if null assignees then HH.text ""
+  else
+    HH.span
+      [ HP.class_
+          (HH.ClassName "detail-assignees")
+      ]
+      [ HH.text
+          (joinWith ", " (map _.login assignees))
+      ]
 
 -- | Render label tags.
 renderLabels
