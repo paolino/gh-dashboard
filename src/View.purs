@@ -169,8 +169,8 @@ renderToolbar state =
         , HP.class_ (HH.ClassName "btn-back")
         ]
         [ HH.text
-            ( if state.loading then "Loading..."
-              else "Refresh"
+            ( if state.loading then "\x21BB ..."
+              else "\x21BB Refresh"
             )
         ]
     , HH.button
@@ -228,8 +228,9 @@ renderToolbar state =
                 )
             ]
             [ HH.text
-                ( if state.autoRefresh then "Auto"
-                  else "Paused"
+                ( if state.autoRefresh then
+                    "\x25B6 Auto"
+                  else "\x23F8 Paused"
                 )
             ]
         , HH.button
@@ -252,16 +253,17 @@ renderToolbar state =
         , renderRateLimit state.rateLimit
         ]
     , HH.a
-        [ HP.href "https://github.com"
+        [ HP.href
+            "https://github.com/paolino/gh-dashboard"
         , HP.target "_blank"
         , HP.class_ (HH.ClassName "btn-small")
         ]
-        [ HH.text "GitHub" ]
+        [ HH.text "\x2605 GitHub" ]
     , HH.button
         [ HE.onClick \_ -> ResetAll
         , HP.class_ (HH.ClassName "btn-small")
         ]
-        [ HH.text "Reset" ]
+        [ HH.text "\x2715 Reset" ]
     ]
 
 activeIf :: Boolean -> String
