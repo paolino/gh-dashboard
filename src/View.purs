@@ -455,29 +455,39 @@ renderIssuesSection
   -> Int
   -> HH.HTML w Action
 renderIssuesSection state issues count =
-  HH.div
-    [ HP.class_ (HH.ClassName "detail-section") ]
-    [ HH.div
-        [ HP.class_
-            (HH.ClassName "detail-heading")
-        ]
-        [ HH.text
-            ("Issues (" <> show count <> ")")
-        ]
-    , if null issues then
-        HH.div
-          [ HP.class_ (HH.ClassName "empty-msg") ]
-          [ HH.text "No open issues" ]
-      else
-        HH.table
+  let
+    key = "section-issues"
+    isOpen = Set.member key state.expandedItems
+  in
+    HH.div
+      [ HP.class_ (HH.ClassName "detail-section") ]
+      [ HH.div
           [ HP.class_
-              (HH.ClassName "detail-table")
+              (HH.ClassName "detail-heading clickable")
+          , HE.onClick \_ -> ToggleItem key
           ]
-          [ HH.tbody_
-              ( issues >>= renderIssueRow state
+          [ HH.text
+              ( (if isOpen then "\x25BE " else "\x25B8 ")
+                  <> "Issues ("
+                  <> show count
+                  <> ")"
               )
           ]
-    ]
+      , if not isOpen then HH.text ""
+        else if null issues then
+          HH.div
+            [ HP.class_ (HH.ClassName "empty-msg") ]
+            [ HH.text "No open issues" ]
+        else
+          HH.table
+            [ HP.class_
+                (HH.ClassName "detail-table")
+            ]
+            [ HH.tbody_
+                ( issues >>= renderIssueRow state
+                )
+            ]
+      ]
 
 -- | Single issue row + optional body row.
 renderIssueRow
@@ -540,28 +550,38 @@ renderPRsSection
   -> Int
   -> HH.HTML w Action
 renderPRsSection state prs count =
-  HH.div
-    [ HP.class_ (HH.ClassName "detail-section") ]
-    [ HH.div
-        [ HP.class_
-            (HH.ClassName "detail-heading")
-        ]
-        [ HH.text
-            ("Pull Requests (" <> show count <> ")")
-        ]
-    , if null prs then
-        HH.div
-          [ HP.class_ (HH.ClassName "empty-msg") ]
-          [ HH.text "No open pull requests" ]
-      else
-        HH.table
+  let
+    key = "section-prs"
+    isOpen = Set.member key state.expandedItems
+  in
+    HH.div
+      [ HP.class_ (HH.ClassName "detail-section") ]
+      [ HH.div
           [ HP.class_
-              (HH.ClassName "detail-table")
+              (HH.ClassName "detail-heading clickable")
+          , HE.onClick \_ -> ToggleItem key
           ]
-          [ HH.tbody_
-              (prs >>= renderPRRow state)
+          [ HH.text
+              ( (if isOpen then "\x25BE " else "\x25B8 ")
+                  <> "Pull Requests ("
+                  <> show count
+                  <> ")"
+              )
           ]
-    ]
+      , if not isOpen then HH.text ""
+        else if null prs then
+          HH.div
+            [ HP.class_ (HH.ClassName "empty-msg") ]
+            [ HH.text "No open pull requests" ]
+        else
+          HH.table
+            [ HP.class_
+                (HH.ClassName "detail-table")
+            ]
+            [ HH.tbody_
+                (prs >>= renderPRRow state)
+            ]
+      ]
 
 -- | Single PR row + optional body row.
 renderPRRow
