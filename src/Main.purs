@@ -71,6 +71,7 @@ initialState =
   , filterText: ""
   , hasToken: false
   , expandedItems: Set.empty
+  , autoRefresh: true
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -129,7 +130,8 @@ handleAction = case _ of
     pure unit
   Tick -> do
     st <- H.get
-    if not st.hasToken then pure unit
+    if not st.hasToken || not st.autoRefresh then
+      pure unit
     else if st.secondsLeft <= 1 then do
       H.modify_ _
         { loading = true
@@ -198,6 +200,12 @@ handleAction = case _ of
         }
   SetFilter txt ->
     H.modify_ _ { filterText = txt }
+  ToggleAutoRefresh -> do
+    st <- H.get
+    H.modify_ _
+      { autoRefresh = not st.autoRefresh
+      , secondsLeft = st.interval
+      }
   ChangeInterval delta -> do
     st <- H.get
     let
