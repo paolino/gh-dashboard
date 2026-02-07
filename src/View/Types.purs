@@ -33,6 +33,8 @@ data Action
   | ToggleIssueLabelFilter String
   | TogglePRLabelFilter String
   | ToggleTheme
+  | ExportStorage
+  | ImportStorage
   | ResetAll
 
 -- | Application state (referenced by view).
