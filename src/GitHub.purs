@@ -13,6 +13,7 @@ module GitHub
   , fetchCommitStatuses
   , fetchWorkflowRuns
   , fetchWorkflowJobs
+  , fetchCommitPRs
   ) where
 
 import Prelude
@@ -35,13 +36,15 @@ import Effect.Exception (message)
 import Fetch (fetch)
 import Fetch.Internal.Headers as Headers
 import Data.Number.Format (toString) as Number
+import Data.Array (head) as Array
 import Types
   ( CheckRun(..)
+  , CommitPR
   , Issue
   , PullRequest
   , Repo
   , WorkflowJob
-  , WorkflowRun(..)
+  , WorkflowRun
   )
 
 -- | Rate limit info from GitHub response headers.
@@ -385,11 +388,7 @@ fetchWorkflowRuns token fullName branch = do
                    Array WorkflowRun
                }
         ) ->
-        Right $ nubByEq
-          ( \(WorkflowRun a) (WorkflowRun b) ->
-              a.name == b.name
-          )
-          res.workflow_runs
+        Right res.workflow_runs
 
 -- | Fetch jobs for a workflow run.
 fetchWorkflowJobs
@@ -412,3 +411,32 @@ fetchWorkflowJobs token fullName runId = do
         ( res
             :: { jobs :: Array WorkflowJob }
         ) -> Right res.jobs
+
+-- | Fetch the first PR associated with a commit SHA.
+fetchCommitPRs
+  :: String
+  -> String
+  -> String
+  -> Aff (Either String (Maybe CommitPR))
+fetchCommitPRs token fullName sha = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+        <> "/commits/"
+        <> sha
+        <> "/pulls"
+    )
+  pure $ result >>= \r ->
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right
+        ( prs
+            :: Array
+                 { title :: String
+                 , html_url :: String
+                 }
+        ) -> Right $ Array.head prs <#>
+        \p ->
+          { title: p.title
+          , htmlUrl: p.html_url
+          }

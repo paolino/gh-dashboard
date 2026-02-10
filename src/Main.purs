@@ -2,7 +2,7 @@ module Main where
 
 import Prelude
 
-import Data.Array (filter, length, null)
+import Data.Array (filter, index, length, nubByEq, null)
 import Data.Array as Array
 import Data.Traversable (traverse_)
 import Data.Either (Either(..))
@@ -15,6 +15,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import GitHub
   ( fetchCheckRuns
+  , fetchCommitPRs
   , fetchCommitStatuses
   , fetchIssue
   , fetchRepo
@@ -52,7 +53,6 @@ import Storage
   , saveToken
   , saveHidden
   )
-import Data.Foldable (find)
 import Types
   ( Issue(..)
   , PullRequest(..)
@@ -105,6 +105,7 @@ initialState =
   , workflowsLoading: false
   , issueLabelFilters: Set.empty
   , prLabelFilters: Set.empty
+  , workflowStatusFilters: Set.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -191,6 +192,8 @@ handleAction = case _ of
                     , workflowRuns: []
                     , workflowCount: 0
                     , workflowJobs: Map.empty
+                    , workflowShaIndex: 0
+                    , workflowShaPRs: Map.empty
                     }
                 }
             Just detail ->
@@ -225,6 +228,8 @@ handleAction = case _ of
                         , workflowRuns: []
                         , workflowCount: 0
                         , workflowJobs: Map.empty
+                        , workflowShaIndex: 0
+                        , workflowShaPRs: Map.empty
                         }
                     }
                 Just detail ->
@@ -267,6 +272,8 @@ handleAction = case _ of
                     , workflowRuns: []
                     , workflowCount: 0
                     , workflowJobs: Map.empty
+                    , workflowShaIndex: 0
+                    , workflowShaPRs: Map.empty
                     }
                 }
             Just detail ->
@@ -349,11 +356,7 @@ handleAction = case _ of
       Nothing -> pure unit
       Just fullName -> do
         let
-          branch = case find
-            (\(Repo r) -> r.fullName == fullName)
-            st.repos of
-            Just (Repo r) -> r.defaultBranch
-            Nothing -> "main"
+          branch = "master"
         H.modify_ _ { workflowsLoading = true }
         result <- H.liftAff
           ( fetchWorkflowRuns st.token fullName
@@ -365,6 +368,8 @@ handleAction = case _ of
             runs = case result of
               Right rs -> rs
               Left _ -> []
+            shas = extractShas runs
+            shaCount = length shas
           case st2.details of
             Nothing ->
               H.modify_ _
@@ -375,56 +380,64 @@ handleAction = case _ of
                     , prCount: 0
                     , prChecks: Map.empty
                     , workflowRuns: runs
-                    , workflowCount: length runs
+                    , workflowCount: shaCount
                     , workflowJobs: Map.empty
+                    , workflowShaIndex: 0
+                    , workflowShaPRs: Map.empty
                     }
                 }
             Just detail ->
               H.modify_ _
                 { details = Just detail
                     { workflowRuns = runs
-                    , workflowCount = length runs
+                    , workflowCount = shaCount
                     , workflowJobs = Map.empty
+                    , workflowShaIndex = 0
+                    , workflowShaPRs = Map.empty
                     }
                 }
-          -- Fetch jobs for non-success runs
-          traverse_
-            ( \(WorkflowRun wr) -> do
-                st3 <- H.get
-                when
-                  (st3.expanded == Just fullName)
-                  do
-                    jobsResult <- H.liftAff $
-                      fetchWorkflowJobs st3.token
-                        fullName
-                        wr.runId
-                    let
-                      nonSuccess = case jobsResult of
-                        Right js -> filter
-                          ( \(WorkflowJob j) ->
-                              j.conclusion
-                                /= Just "success"
-                          )
-                          js
-                        Left _ -> []
-                    when (not (null nonSuccess)) do
-                      st4 <- H.get
-                      case st4.details of
-                        Nothing -> pure unit
-                        Just detail ->
-                          H.modify_ _
-                            { details = Just
-                                detail
-                                  { workflowJobs =
-                                      Map.insert
-                                        wr.name
-                                        nonSuccess
-                                        detail.workflowJobs
-                                  }
-                            }
-            )
-            runs
+          loadWorkflowShaDetails fullName
         H.modify_ _ { workflowsLoading = false }
+  WorkflowPrevSha -> do
+    st <- H.get
+    case st.details of
+      Nothing -> pure unit
+      Just detail -> do
+        let
+          idx = detail.workflowShaIndex
+        when (idx > 0) do
+          H.modify_ _
+            { details = Just detail
+                { workflowShaIndex = idx - 1
+                , workflowJobs = Map.empty
+                }
+            , workflowStatusFilters = Set.empty
+            }
+          case st.expanded of
+            Nothing -> pure unit
+            Just fullName ->
+              loadWorkflowShaDetails fullName
+  WorkflowNextSha -> do
+    st <- H.get
+    case st.details of
+      Nothing -> pure unit
+      Just detail -> do
+        let
+          idx = detail.workflowShaIndex
+          shas = extractShas detail.workflowRuns
+          maxIdx = length shas - 1
+        when (idx < maxIdx) do
+          H.modify_ _
+            { details = Just detail
+                { workflowShaIndex = idx + 1
+                , workflowJobs = Map.empty
+                }
+            , workflowStatusFilters = Set.empty
+            }
+          case st.expanded of
+            Nothing -> pure unit
+            Just fullName ->
+              loadWorkflowShaDetails fullName
   ToggleExpand fullName -> do
     st <- H.get
     if st.expanded == Just fullName then
@@ -602,6 +615,20 @@ handleAction = case _ of
           Set.insert label st.prLabelFilters
     H.modify_ _ { prLabelFilters = newFilters }
     liftEffect $ savePRLabelFilters newFilters
+  ToggleWorkflowStatusFilter status -> do
+    st <- H.get
+    let
+      newFilters =
+        if Set.member status
+          st.workflowStatusFilters
+        then
+          Set.delete status
+            st.workflowStatusFilters
+        else
+          Set.insert status
+            st.workflowStatusFilters
+    H.modify_ _
+      { workflowStatusFilters = newFilters }
   ToggleTheme -> do
     st <- H.get
     let dark = not st.darkTheme
@@ -633,3 +660,103 @@ handleAction = case _ of
         , loading = false
         , darkTheme = true
         }
+
+-- | Extract unique SHAs from runs, preserving order.
+extractShas :: Array WorkflowRun -> Array String
+extractShas runs =
+  map (\(WorkflowRun r) -> r.headSha)
+    ( nubByEq
+        ( \(WorkflowRun a) (WorkflowRun b) ->
+            a.headSha == b.headSha
+        )
+        runs
+    )
+
+-- | Load jobs and PR info for the currently selected SHA.
+loadWorkflowShaDetails
+  :: forall o
+   . String
+  -> H.HalogenM State Action () o Aff Unit
+loadWorkflowShaDetails fullName = do
+  st <- H.get
+  case st.details of
+    Nothing -> pure unit
+    Just detail -> do
+      let
+        shas = extractShas detail.workflowRuns
+        idx = detail.workflowShaIndex
+      case index shas idx of
+        Nothing -> pure unit
+        Just sha -> do
+          let
+            shaRuns = nubByEq
+              ( \(WorkflowRun a) (WorkflowRun b) ->
+                  a.name == b.name
+              )
+              ( filter
+                  ( \(WorkflowRun r) ->
+                      r.headSha == sha
+                  )
+                  detail.workflowRuns
+              )
+          -- Fetch PR for this SHA if not cached
+          when
+            ( not
+                ( Map.member sha
+                    detail.workflowShaPRs
+                )
+            )
+            do
+              prResult <- H.liftAff $
+                fetchCommitPRs st.token fullName sha
+              st2 <- H.get
+              case prResult of
+                Right (Just pr) ->
+                  case st2.details of
+                    Nothing -> pure unit
+                    Just d ->
+                      H.modify_ _
+                        { details = Just d
+                            { workflowShaPRs =
+                                Map.insert sha pr
+                                  d.workflowShaPRs
+                            }
+                        }
+                _ -> pure unit
+          -- Fetch jobs for non-success runs
+          traverse_
+            ( \(WorkflowRun wr) -> do
+                st3 <- H.get
+                when
+                  (st3.expanded == Just fullName)
+                  do
+                    jobsResult <- H.liftAff $
+                      fetchWorkflowJobs st3.token
+                        fullName
+                        wr.runId
+                    let
+                      nonSuccess =
+                        case jobsResult of
+                          Right js -> filter
+                            ( \(WorkflowJob j) ->
+                                j.conclusion
+                                  /= Just "success"
+                            )
+                            js
+                          Left _ -> []
+                    when (not (null nonSuccess)) do
+                      st4 <- H.get
+                      case st4.details of
+                        Nothing -> pure unit
+                        Just d ->
+                          H.modify_ _
+                            { details = Just d
+                                { workflowJobs =
+                                    Map.insert
+                                      wr.name
+                                      nonSuccess
+                                      d.workflowJobs
+                                }
+                            }
+            )
+            shaRuns

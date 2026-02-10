@@ -112,7 +112,6 @@ loadPRLabelFilters = loadStringSet storageKeyPRLabels
 savePRLabelFilters :: Set.Set String -> Effect Unit
 savePRLabelFilters = saveStringSet storageKeyPRLabels
 
-
 loadStringSet :: String -> Effect (Set.Set String)
 loadStringSet key = do
   w <- window
