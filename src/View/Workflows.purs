@@ -12,6 +12,7 @@ import Data.Array
   , nubByEq
   , null
   , sort
+  , sortBy
   )
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -25,7 +26,7 @@ import View.DetailWidgets
   ( refreshButton
   , renderLabelSelector
   )
-import View.Helpers (formatDate, linkButton)
+import View.Helpers (formatDateTime, linkButton)
 import View.Types (Action(..), State)
 
 -- | Derive effective status for a workflow run.
@@ -44,14 +45,18 @@ extractShas runs =
         runs
     )
 
--- | Runs for a given SHA, deduplicated by name.
+-- | Runs for a given SHA, deduplicated by name, recent first.
 runsForSha
   :: String -> Array WorkflowRun -> Array WorkflowRun
 runsForSha sha =
-  nubByEq
+  sortBy
     ( \(WorkflowRun a) (WorkflowRun b) ->
-        a.name == b.name
+        compare b.updatedAt a.updatedAt
     )
+    <<< nubByEq
+      ( \(WorkflowRun a) (WorkflowRun b) ->
+          a.name == b.name
+      )
     <<< filter
       (\(WorkflowRun r) -> r.headSha == sha)
 
@@ -279,7 +284,7 @@ renderWorkflowRow jobs (WorkflowRun run) =
                     (HH.ClassName "detail-date")
                 ]
                 [ HH.text
-                    (formatDate run.updatedAt)
+                    (formatDateTime run.updatedAt)
                 ]
             ]
         ]
