@@ -5,6 +5,8 @@ module Types
   , PullRequest(..)
   , RepoDetail
   , CheckRun(..)
+  , WorkflowRun(..)
+  , WorkflowJob(..)
   , Label
   , Assignee
   ) where
@@ -41,6 +43,7 @@ newtype Repo = Repo
   , openIssuesCount :: Int
   , updatedAt :: String
   , ownerLogin :: String
+  , defaultBranch :: String
   }
 
 instance DecodeJson Repo where
@@ -58,6 +61,8 @@ instance DecodeJson Repo where
       updatedAt_ <- obj .: "updated_at"
       ownerObj <- obj .: "owner"
       ownerLogin_ <- ownerObj .: "login"
+      defaultBranch_ <- fromMaybe "main"
+        <$> obj .:? "default_branch"
       pure $ Repo
         { id: id_
         , name: name_
@@ -69,6 +74,7 @@ instance DecodeJson Repo where
         , openIssuesCount: openIssuesCount_
         , updatedAt: updatedAt_
         , ownerLogin: ownerLogin_
+        , defaultBranch: defaultBranch_
         }
 
 -- | An open issue (excluding pull requests).
@@ -173,6 +179,58 @@ instance DecodeJson CheckRun where
         , htmlUrl: htmlUrl_
         }
 
+-- | A single workflow run on the default branch.
+newtype WorkflowRun = WorkflowRun
+  { runId :: Number
+  , name :: String
+  , status :: String
+  , conclusion :: Maybe String
+  , htmlUrl :: String
+  , updatedAt :: String
+  }
+
+instance DecodeJson WorkflowRun where
+  decodeJson json = case toObject json of
+    Nothing -> Left (TypeMismatch "Object")
+    Just obj -> do
+      runId_ <- obj .: "id"
+      name_ <- obj .: "name"
+      status_ <- obj .: "status"
+      conclusion_ <- obj .:? "conclusion"
+      htmlUrl_ <- obj .: "html_url"
+      updatedAt_ <- obj .: "updated_at"
+      pure $ WorkflowRun
+        { runId: runId_
+        , name: name_
+        , status: status_
+        , conclusion: conclusion_
+        , htmlUrl: htmlUrl_
+        , updatedAt: updatedAt_
+        }
+
+-- | A single job within a workflow run.
+newtype WorkflowJob = WorkflowJob
+  { name :: String
+  , status :: String
+  , conclusion :: Maybe String
+  , htmlUrl :: String
+  }
+
+instance DecodeJson WorkflowJob where
+  decodeJson json = case toObject json of
+    Nothing -> Left (TypeMismatch "Object")
+    Just obj -> do
+      name_ <- obj .: "name"
+      status_ <- obj .: "status"
+      conclusion_ <- obj .:? "conclusion"
+      htmlUrl_ <- obj .: "html_url"
+      pure $ WorkflowJob
+        { name: name_
+        , status: status_
+        , conclusion: conclusion_
+        , htmlUrl: htmlUrl_
+        }
+
 -- | Cached detail for an expanded repo.
 type RepoDetail =
   { issues :: Array Issue
@@ -180,4 +238,7 @@ type RepoDetail =
   , issueCount :: Int
   , prCount :: Int
   , prChecks :: Map Int (Array CheckRun)
+  , workflowRuns :: Array WorkflowRun
+  , workflowCount :: Int
+  , workflowJobs :: Map String (Array WorkflowJob)
   }

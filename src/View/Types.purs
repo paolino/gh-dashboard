@@ -32,6 +32,7 @@ data Action
   | CopyText String
   | ToggleIssueLabelFilter String
   | TogglePRLabelFilter String
+  | RefreshWorkflows
   | ToggleTheme
   | ExportStorage
   | ImportStorage
@@ -58,6 +59,7 @@ type State =
   , darkTheme :: Boolean
   , issuesLoading :: Boolean
   , prsLoading :: Boolean
+  , workflowsLoading :: Boolean
   , issueLabelFilters :: Set String
   , prLabelFilters :: Set String
   }

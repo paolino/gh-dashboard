@@ -108,6 +108,9 @@ refreshSinglePR token fullName prNum = do
                 , prCount: 1
                 , prChecks: Map.singleton prNum
                     newChecks
+                , workflowRuns: []
+                , workflowCount: 0
+                , workflowJobs: Map.empty
                 }
             }
         Just detail ->

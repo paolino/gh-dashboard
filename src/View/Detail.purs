@@ -9,6 +9,7 @@ import Halogen.HTML.Properties as HP
 import View.Issues (renderIssuesSection)
 import View.PRs (renderPRsSection)
 import View.Types (Action, State)
+import View.Workflows (renderWorkflowsSection)
 
 -- | Detail panel shown below expanded row.
 renderDetailPanel
@@ -29,12 +30,18 @@ renderDetailPanel state =
           else case state.details of
             Nothing ->
               HH.div_
-                [ renderIssuesSection state [] 0
+                [ renderWorkflowsSection state
+                    []
+                    0
+                , renderIssuesSection state [] 0
                 , renderPRsSection state [] 0
                 ]
             Just detail ->
               HH.div_
-                [ renderIssuesSection state
+                [ renderWorkflowsSection state
+                    detail.workflowRuns
+                    detail.workflowCount
+                , renderIssuesSection state
                     detail.issues
                     detail.issueCount
                 , renderPRsSection state
