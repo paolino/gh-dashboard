@@ -111,6 +111,8 @@ refreshSinglePR token fullName prNum = do
                 , workflowRuns: []
                 , workflowCount: 0
                 , workflowJobs: Map.empty
+                , workflowShaIndex: 0
+                , workflowShaPRs: Map.empty
                 }
             }
         Just detail ->

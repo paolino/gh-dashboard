@@ -33,6 +33,9 @@ data Action
   | ToggleIssueLabelFilter String
   | TogglePRLabelFilter String
   | RefreshWorkflows
+  | WorkflowPrevSha
+  | WorkflowNextSha
+  | ToggleWorkflowStatusFilter String
   | ToggleTheme
   | ExportStorage
   | ImportStorage
@@ -62,4 +65,5 @@ type State =
   , workflowsLoading :: Boolean
   , issueLabelFilters :: Set String
   , prLabelFilters :: Set String
+  , workflowStatusFilters :: Set String
   }

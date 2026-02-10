@@ -7,6 +7,7 @@ module Types
   , CheckRun(..)
   , WorkflowRun(..)
   , WorkflowJob(..)
+  , CommitPR
   , Label
   , Assignee
   ) where
@@ -187,6 +188,8 @@ newtype WorkflowRun = WorkflowRun
   , conclusion :: Maybe String
   , htmlUrl :: String
   , updatedAt :: String
+  , headSha :: String
+  , displayTitle :: String
   }
 
 instance DecodeJson WorkflowRun where
@@ -199,6 +202,9 @@ instance DecodeJson WorkflowRun where
       conclusion_ <- obj .:? "conclusion"
       htmlUrl_ <- obj .: "html_url"
       updatedAt_ <- obj .: "updated_at"
+      headSha_ <- obj .: "head_sha"
+      displayTitle_ <- fromMaybe ""
+        <$> obj .:? "display_title"
       pure $ WorkflowRun
         { runId: runId_
         , name: name_
@@ -206,7 +212,15 @@ instance DecodeJson WorkflowRun where
         , conclusion: conclusion_
         , htmlUrl: htmlUrl_
         , updatedAt: updatedAt_
+        , headSha: headSha_
+        , displayTitle: displayTitle_
         }
+
+-- | PR associated with a commit.
+type CommitPR =
+  { title :: String
+  , htmlUrl :: String
+  }
 
 -- | A single job within a workflow run.
 newtype WorkflowJob = WorkflowJob
@@ -241,4 +255,6 @@ type RepoDetail =
   , workflowRuns :: Array WorkflowRun
   , workflowCount :: Int
   , workflowJobs :: Map String (Array WorkflowJob)
+  , workflowShaIndex :: Int
+  , workflowShaPRs :: Map String CommitPR
   }
