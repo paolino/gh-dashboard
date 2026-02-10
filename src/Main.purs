@@ -20,6 +20,8 @@ import GitHub
   , fetchRepo
   , fetchRepoIssues
   , fetchRepoPRs
+  , fetchWorkflowJobs
+  , fetchWorkflowRuns
   )
 import Halogen as H
 import Halogen.Aff as HA
@@ -50,7 +52,14 @@ import Storage
   , saveToken
   , saveHidden
   )
-import Types (Issue(..), PullRequest(..), Repo(..))
+import Data.Foldable (find)
+import Types
+  ( Issue(..)
+  , PullRequest(..)
+  , Repo(..)
+  , WorkflowJob(..)
+  , WorkflowRun(..)
+  )
 import View (Action(..), State, renderDashboard, renderTokenForm)
 import Web.HTML (window)
 import Web.HTML.Window (confirm)
@@ -93,6 +102,7 @@ initialState =
   , darkTheme: true
   , issuesLoading: false
   , prsLoading: false
+  , workflowsLoading: false
   , issueLabelFilters: Set.empty
   , prLabelFilters: Set.empty
   }
@@ -178,6 +188,9 @@ handleAction = case _ of
                     , issueCount: length issues
                     , prCount: 0
                     , prChecks: Map.empty
+                    , workflowRuns: []
+                    , workflowCount: 0
+                    , workflowJobs: Map.empty
                     }
                 }
             Just detail ->
@@ -209,6 +222,9 @@ handleAction = case _ of
                         , issueCount: 1
                         , prCount: 0
                         , prChecks: Map.empty
+                        , workflowRuns: []
+                        , workflowCount: 0
+                        , workflowJobs: Map.empty
                         }
                     }
                 Just detail ->
@@ -248,6 +264,9 @@ handleAction = case _ of
                     , issueCount: 0
                     , prCount: length prs
                     , prChecks: Map.empty
+                    , workflowRuns: []
+                    , workflowCount: 0
+                    , workflowJobs: Map.empty
                     }
                 }
             Just detail ->
@@ -324,6 +343,88 @@ handleAction = case _ of
       Nothing -> pure unit
       Just fullName ->
         refreshSinglePR st.token fullName prNum
+  RefreshWorkflows -> do
+    st <- H.get
+    case st.expanded of
+      Nothing -> pure unit
+      Just fullName -> do
+        let
+          branch = case find
+            (\(Repo r) -> r.fullName == fullName)
+            st.repos of
+            Just (Repo r) -> r.defaultBranch
+            Nothing -> "main"
+        H.modify_ _ { workflowsLoading = true }
+        result <- H.liftAff
+          ( fetchWorkflowRuns st.token fullName
+              branch
+          )
+        st2 <- H.get
+        when (st2.expanded == Just fullName) do
+          let
+            runs = case result of
+              Right rs -> rs
+              Left _ -> []
+          case st2.details of
+            Nothing ->
+              H.modify_ _
+                { details = Just
+                    { issues: []
+                    , pullRequests: []
+                    , issueCount: 0
+                    , prCount: 0
+                    , prChecks: Map.empty
+                    , workflowRuns: runs
+                    , workflowCount: length runs
+                    , workflowJobs: Map.empty
+                    }
+                }
+            Just detail ->
+              H.modify_ _
+                { details = Just detail
+                    { workflowRuns = runs
+                    , workflowCount = length runs
+                    , workflowJobs = Map.empty
+                    }
+                }
+          -- Fetch jobs for non-success runs
+          traverse_
+            ( \(WorkflowRun wr) -> do
+                st3 <- H.get
+                when
+                  (st3.expanded == Just fullName)
+                  do
+                    jobsResult <- H.liftAff $
+                      fetchWorkflowJobs st3.token
+                        fullName
+                        wr.runId
+                    let
+                      nonSuccess = case jobsResult of
+                        Right js -> filter
+                          ( \(WorkflowJob j) ->
+                              j.conclusion
+                                /= Just "success"
+                          )
+                          js
+                        Left _ -> []
+                    when (not (null nonSuccess)) do
+                      st4 <- H.get
+                      case st4.details of
+                        Nothing -> pure unit
+                        Just detail ->
+                          H.modify_ _
+                            { details = Just
+                                detail
+                                  { workflowJobs =
+                                      Map.insert
+                                        wr.name
+                                        nonSuccess
+                                        detail.workflowJobs
+                                  }
+                            }
+            )
+            runs
+        H.modify_ _ { workflowsLoading = false }
   ToggleExpand fullName -> do
     st <- H.get
     if st.expanded == Just fullName then
@@ -365,12 +466,16 @@ handleAction = case _ of
                 null d.issues
             | key == "section-prs" ->
                 null d.pullRequests
+            | key == "section-workflows" ->
+                null d.workflowRuns
             | otherwise -> false
       when empty case key of
         "section-issues" ->
           handleAction RefreshIssues
         "section-prs" ->
           handleAction RefreshPRs
+        "section-workflows" ->
+          handleAction RefreshWorkflows
         _ -> pure unit
   SetFilter txt ->
     H.modify_ _ { filterText = txt }

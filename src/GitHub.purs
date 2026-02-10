@@ -11,6 +11,8 @@ module GitHub
   , fetchRepo
   , fetchCheckRuns
   , fetchCommitStatuses
+  , fetchWorkflowRuns
+  , fetchWorkflowJobs
   ) where
 
 import Prelude
@@ -32,7 +34,15 @@ import Effect.Aff (Aff, try)
 import Effect.Exception (message)
 import Fetch (fetch)
 import Fetch.Internal.Headers as Headers
-import Types (CheckRun(..), Issue, PullRequest, Repo)
+import Data.Number.Format (toString) as Number
+import Types
+  ( CheckRun(..)
+  , Issue
+  , PullRequest
+  , Repo
+  , WorkflowJob
+  , WorkflowRun(..)
+  )
 
 -- | Rate limit info from GitHub response headers.
 type RateLimit =
@@ -351,3 +361,54 @@ fetchCommitStatuses token fullName sha = do
   mapState "failure" = "failure"
   mapState "error" = "failure"
   mapState other = other
+
+-- | Fetch latest workflow run per workflow on the default branch.
+fetchWorkflowRuns
+  :: String
+  -> String
+  -> String
+  -> Aff (Either String (Array WorkflowRun))
+fetchWorkflowRuns token fullName branch = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+        <> "/actions/runs?branch="
+        <> branch
+        <> "&per_page=100"
+    )
+  pure $ result >>= \r ->
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right
+        ( res
+            :: { workflow_runs ::
+                   Array WorkflowRun
+               }
+        ) ->
+        Right $ nubByEq
+          ( \(WorkflowRun a) (WorkflowRun b) ->
+              a.name == b.name
+          )
+          res.workflow_runs
+
+-- | Fetch jobs for a workflow run.
+fetchWorkflowJobs
+  :: String
+  -> String
+  -> Number
+  -> Aff (Either String (Array WorkflowJob))
+fetchWorkflowJobs token fullName runId = do
+  result <- ghFetch token
+    ( "https://api.github.com/repos/"
+        <> fullName
+        <> "/actions/runs/"
+        <> Number.toString runId
+        <> "/jobs"
+    )
+  pure $ result >>= \r ->
+    case decodeJson r.json of
+      Left err -> Left (show err)
+      Right
+        ( res
+            :: { jobs :: Array WorkflowJob }
+        ) -> Right res.jobs
