@@ -7,6 +7,7 @@ module View.Helpers
   , renderAuthor
   , renderLabels
   , formatDate
+  , formatDateTime
   , parseMarkdownImpl
   ) where
 
@@ -14,7 +15,7 @@ import Prelude
 
 import Data.Array (intersperse, null)
 import Data.Maybe (Maybe(..))
-import Data.String (take)
+import Data.String (drop, take)
 import Halogen.HTML as HH
 import Halogen.HTML.Core (AttrName(..), PropName(..))
 import Halogen.HTML.Properties as HP
@@ -140,3 +141,7 @@ renderLabels labels =
 -- | Format ISO date to short form (YYYY-MM-DD).
 formatDate :: String -> String
 formatDate = take 10
+
+-- | Format ISO date+time to short form (YYYY-MM-DD HH:MM).
+formatDateTime :: String -> String
+formatDateTime s = take 10 s <> " " <> take 5 (drop 11 s)
