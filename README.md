@@ -1,8 +1,8 @@
 # gh-dashboard
 
-[![CI](https://github.com/paolino/gh-dashboard/actions/workflows/ci.yaml/badge.svg)](https://github.com/paolino/gh-dashboard/actions/workflows/ci.yaml)
+[![CI](https://github.com/lambdasistemi/gh-dashboard/actions/workflows/ci.yaml/badge.svg)](https://github.com/lambdasistemi/gh-dashboard/actions/workflows/ci.yaml)
 
-**[Live demo](https://paolino.github.io/gh-dashboard/)**
+**[Live demo](https://lambdasistemi.github.io/gh-dashboard/)**
 
 Repository dashboard for GitHub — browse your repos, open issues and pull requests on a single page with granular refresh controls, expandable detail panels and inline markdown rendering.
 
