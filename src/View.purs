@@ -166,7 +166,7 @@ renderToolbar state =
         ]
     , HH.a
         [ HP.href
-            "https://github.com/paolino/gh-dashboard"
+            "https://github.com/lambdasistemi/gh-dashboard"
         , HP.target "_blank"
         , HP.class_ (HH.ClassName "link-btn")
         , HP.title "Source code"
