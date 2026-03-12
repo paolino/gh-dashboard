@@ -265,6 +265,7 @@ newtype Project = Project
 -- | An item on a project board.
 newtype ProjectItem = ProjectItem
   { itemId :: String
+  , draftId :: Maybe String
   , title :: String
   , status :: Maybe String
   , itemType :: String

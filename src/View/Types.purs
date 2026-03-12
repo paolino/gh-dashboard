@@ -57,6 +57,9 @@ data Action
   | SetItemStatus String String String
   | SetNewItemTitle String
   | SubmitNewItem String
+  | StartEditItem String String
+  | SetEditItemTitle String
+  | SubmitEditItem String String String
 
 -- | Application state (referenced by view).
 type State =
@@ -92,4 +95,6 @@ type State =
   , projectRepoFilters :: Set String
   , projectStatusFields :: Map String StatusField
   , newItemTitle :: String
+  , editingItem :: Maybe String
+  , editItemTitle :: String
   }

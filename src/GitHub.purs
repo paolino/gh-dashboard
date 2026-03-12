@@ -18,6 +18,7 @@ module GitHub
   , fetchProjectItems
   , updateItemStatus
   , addDraftItem
+  , updateDraftItem
   ) where
 
 import Prelude
@@ -542,7 +543,7 @@ projectItemsQuery nodeId mCursor =
     <> " repository { nameWithOwner } }"
     <> " ... on PullRequest { title url number"
     <> " body repository { nameWithOwner } }"
-    <> " ... on DraftIssue { title body }"
+    <> " ... on DraftIssue { id title body }"
     <> " } } } } } }"
 
 -- | Fetch the authenticated user's Projects v2
@@ -716,6 +717,10 @@ parseProjectItem json = case toObject json of
                         Left _ -> Nothing
                     Nothing -> Nothing
                 Left _ -> Nothing
+              draftId_ = case contentObj .: "id" of
+                Right d
+                  | isNothing url_ -> Just d
+                _ -> Nothing
               itemType_ =
                 if isNothing url_ then "DRAFT_ISSUE"
                 else "ISSUE"
@@ -733,6 +738,7 @@ parseProjectItem json = case toObject json of
                   labels_ = extractLabels fvNodes
                 Right $ Just $ ProjectItem
                   { itemId: itemId_
+                  , draftId: draftId_
                   , title: title_
                   , status: status_
                   , itemType: itemType_
@@ -885,6 +891,29 @@ addDraftItem token projectId title = do
         <> escapeGql title
         <> "\""
         <> " }) { projectItem { id } } }"
+  result <- ghGraphQL token mutation
+  case result of
+    Left err -> pure $ Left err
+    Right _ -> pure $ Right unit
+
+-- | Update a draft issue title/body.
+updateDraftItem
+  :: String
+  -> String
+  -> String
+  -> Aff (Either String Unit)
+updateDraftItem token draftId title = do
+  let
+    mutation =
+      "mutation { updateProjectV2DraftIssue("
+        <> "input: {"
+        <> " draftIssueId: \""
+        <> draftId
+        <> "\""
+        <> " title: \""
+        <> escapeGql title
+        <> "\""
+        <> " }) { draftIssue { id } } }"
   result <- ghGraphQL token mutation
   case result of
     Left err -> pure $ Left err

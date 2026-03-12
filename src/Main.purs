@@ -27,6 +27,7 @@ import GitHub
   , fetchWorkflowRuns
   , updateItemStatus
   , addDraftItem
+  , updateDraftItem
   )
 import Halogen as H
 import Halogen.Aff as HA
@@ -121,6 +122,8 @@ initialState =
   , projectRepoFilters: Set.empty
   , projectStatusFields: Map.empty
   , newItemTitle: ""
+  , editingItem: Nothing
+  , editItemTitle: ""
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -801,6 +804,46 @@ handleAction = case _ of
         Right _ ->
           handleAction
             (RefreshProjectItems projectId)
+  StartEditItem itemId currentTitle ->
+    H.modify_ _
+      { editingItem = Just itemId
+      , editItemTitle = currentTitle
+      }
+  SetEditItemTitle t ->
+    H.modify_ _ { editItemTitle = t }
+  SubmitEditItem projectId draftId newTitle -> do
+    st <- H.get
+    H.modify_ _
+      { editingItem = Nothing
+      , editItemTitle = ""
+      }
+    when (newTitle /= "") do
+      -- optimistic update
+      case Map.lookup projectId st.projectItems of
+        Nothing -> pure unit
+        Just items ->
+          let
+            updated = map
+              ( \(ProjectItem pi) ->
+                  if pi.itemId == draftId then
+                    ProjectItem pi
+                      { title = newTitle }
+                  else ProjectItem pi
+              )
+              items
+          in
+            H.modify_ _
+              { projectItems = Map.insert
+                  projectId
+                  updated
+                  st.projectItems
+              }
+      result <- H.liftAff $
+        updateDraftItem st.token draftId newTitle
+      case result of
+        Left err ->
+          H.modify_ _ { error = Just err }
+        Right _ -> pure unit
   SetItemStatus projectId itemId newStatus -> do
     st <- H.get
     case Map.lookup projectId

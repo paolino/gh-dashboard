@@ -481,6 +481,8 @@ renderItemRow state projId mSf (ProjectItem item) =
       <> item.title
     isOpen = Set.member key state.expandedItems
     curStatus = fromMaybe "(no status)" item.status
+    isDraft = item.itemType == "DRAFT_ISSUE"
+    isEditing = state.editingItem == Just item.itemId
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
@@ -501,51 +503,101 @@ renderItemRow state projId mSf (ProjectItem item) =
                   case item.url of
                     Just url -> [ linkButton url ]
                     Nothing -> []
+                <>
+                  case item.draftId of
+                    Just _ | isDraft ->
+                      [ HH.button
+                          [ HP.class_
+                              (HH.ClassName "btn-hide")
+                          , HP.title "Edit"
+                          , HE.onClick \_ ->
+                              StartEditItem item.itemId
+                                item.title
+                          , HP.attr
+                              (AttrName "onclick")
+                              "event.stopPropagation()"
+                          ]
+                          [ HH.text "\x270E" ]
+                      ]
+                    _ -> []
             )
-        , HH.td_
-            [ HH.span_
-                [ HH.text
-                    ( case item.number of
-                        Just n ->
-                          "#" <> show n <> " "
-                        Nothing -> ""
-                    )
-                , case item.url of
-                    Just url ->
-                      HH.a
-                        [ HP.href url
-                        , HP.target "_blank"
-                        , HP.class_
-                            ( HH.ClassName
-                                "detail-link"
-                            )
-                        ]
-                        [ HH.text item.title ]
-                    Nothing ->
-                      HH.text item.title
-                ]
-            , if null item.labels then
-                HH.text ""
-              else
-                HH.span
+        , if isEditing then
+            HH.td_
+              [ HH.div
                   [ HP.class_
-                      ( HH.ClassName
-                          "detail-labels"
-                      )
+                      (HH.ClassName "add-repo-bar")
                   ]
-                  ( map
-                      ( \lbl ->
-                          HH.span
-                            [ HP.class_
-                                ( HH.ClassName
-                                    "label-tag"
-                                )
-                            ]
-                            [ HH.text lbl ]
+                  [ HH.input
+                      [ HP.type_ HP.InputText
+                      , HP.value state.editItemTitle
+                      , HP.class_
+                          (HH.ClassName "filter-input")
+                      , HE.onValueInput SetEditItemTitle
+                      , HP.attr (AttrName "onclick")
+                          "event.stopPropagation()"
+                      ]
+                  , HH.button
+                      [ HP.class_
+                          (HH.ClassName "btn-small")
+                      , HE.onClick \_ ->
+                          case item.draftId of
+                            Just did ->
+                              SubmitEditItem projId
+                                did
+                                state.editItemTitle
+                            Nothing ->
+                              ToggleItem key
+                      , HP.attr (AttrName "onclick")
+                          "event.stopPropagation()"
+                      ]
+                      [ HH.text "Save" ]
+                  ]
+              ]
+          else
+            HH.td_
+              [ HH.span_
+                  [ HH.text
+                      ( case item.number of
+                          Just n ->
+                            "#" <> show n <> " "
+                          Nothing -> ""
                       )
-                      item.labels
-                  )
-            ]
+                  , case item.url of
+                      Just url ->
+                        HH.a
+                          [ HP.href url
+                          , HP.target "_blank"
+                          , HP.class_
+                              ( HH.ClassName
+                                  "detail-link"
+                              )
+                          ]
+                          [ HH.text item.title ]
+                      Nothing ->
+                        HH.text item.title
+                  ]
+              , if null item.labels then
+                  HH.text ""
+                else
+                  HH.span
+                    [ HP.class_
+                        ( HH.ClassName
+                            "detail-labels"
+                        )
+                    ]
+                    ( map
+                        ( \lbl ->
+                            HH.span
+                              [ HP.class_
+                                  ( HH.ClassName
+                                      "label-tag"
+                                  )
+                              ]
+                              [ HH.text lbl ]
+                        )
+                        item.labels
+                    )
+              ]
         , HH.td_
             [ HH.span
                 [ HP.class_
