@@ -226,7 +226,7 @@ groupByOrg items =
       ( \org ->
           { org
           , repos: Array.sortBy
-              (flip compare `on` _.count)
+              (compare `on` _.repo)
               ( map
                   ( \r ->
                       { full: r.full
@@ -320,7 +320,7 @@ renderOrgGroup state { org, repos } =
             HH.div
               [ HP.class_
                   ( HH.ClassName
-                      ( "label-tag clickable"
+                      ( "filter-row clickable"
                           <>
                             if
                               Set.member r.full
