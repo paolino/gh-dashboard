@@ -714,7 +714,10 @@ handleAction = case _ of
             (RefreshProjectItems projectId)
   RefreshProjectItems projectId -> do
     st <- H.get
-    H.modify_ _ { projectItemsLoading = true }
+    let isFirstLoad =
+          not (Map.member projectId st.projectItems)
+    when isFirstLoad
+      (H.modify_ _ { projectItemsLoading = true })
     result <- H.liftAff
       (fetchProjectItems st.token projectId)
     case result of
