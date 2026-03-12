@@ -53,12 +53,14 @@ import Storage
   , loadRepoList
   , loadTheme
   , loadToken
+  , loadPage
   , saveIssueLabelFilters
   , savePRLabelFilters
   , saveRepoList
   , saveTheme
   , saveToken
   , saveHidden
+  , savePage
   )
 import Types
   ( Issue(..)
@@ -148,6 +150,7 @@ handleAction = case _ of
     dark <- liftEffect loadTheme
     issueLabels <- liftEffect loadIssueLabelFilters
     prLabels <- liftEffect loadPRLabelFilters
+    page <- liftEffect loadPage
     liftEffect $ setBodyTheme dark
     H.modify_ _
       { repoList = repoList
@@ -155,6 +158,7 @@ handleAction = case _ of
       , darkTheme = dark
       , issueLabelFilters = issueLabels
       , prLabelFilters = prLabels
+      , currentPage = page
       }
     case saved of
       "" -> pure unit
@@ -162,6 +166,7 @@ handleAction = case _ of
         H.modify_ _
           { token = tok, hasToken = true }
         doRefresh tok
+        handleAction (SwitchPage page)
   SetToken tok ->
     H.modify_ _ { token = tok }
   SubmitToken -> do
@@ -686,6 +691,7 @@ handleAction = case _ of
         }
   SwitchPage page -> do
     H.modify_ _ { currentPage = page }
+    liftEffect $ savePage page
     when (page == ProjectsPage) do
       st <- H.get
       when (null st.projects) do

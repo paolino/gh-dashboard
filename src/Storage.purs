@@ -12,6 +12,8 @@ module Storage
   , saveIssueLabelFilters
   , loadPRLabelFilters
   , savePRLabelFilters
+  , loadPage
+  , savePage
   , clearAll
   ) where
 
@@ -27,6 +29,7 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
 import Effect (Effect)
+import Types (Page(..))
 import Web.HTML (window)
 import Web.HTML.Window (localStorage)
 import Web.Storage.Storage as Storage
@@ -48,6 +51,9 @@ storageKeyIssueLabels = "gh-dashboard-issue-labels"
 
 storageKeyPRLabels :: String
 storageKeyPRLabels = "gh-dashboard-pr-labels"
+
+storageKeyPage :: String
+storageKeyPage = "gh-dashboard-page"
 
 
 loadToken :: Effect String
@@ -137,6 +143,26 @@ saveStringSet key vals = do
     arr = Set.toUnfoldable vals
   Storage.setItem key (stringify (encodeJson arr)) s
 
+loadPage :: Effect Page
+loadPage = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeyPage s
+  pure $ case raw of
+    Just "ProjectsPage" -> ProjectsPage
+    _ -> ReposPage
+
+savePage :: Page -> Effect Unit
+savePage page = do
+  w <- window
+  s <- localStorage w
+  Storage.setItem storageKeyPage
+    ( case page of
+        ReposPage -> "ReposPage"
+        ProjectsPage -> "ProjectsPage"
+    )
+    s
+
 clearAll :: Effect Unit
 clearAll = do
   w <- window
@@ -147,6 +173,7 @@ clearAll = do
   Storage.removeItem storageKeyTheme s
   Storage.removeItem storageKeyIssueLabels s
   Storage.removeItem storageKeyPRLabels s
+  Storage.removeItem storageKeyPage s
 
 loadHidden :: Effect (Set.Set String)
 loadHidden = do
