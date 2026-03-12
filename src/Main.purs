@@ -58,6 +58,7 @@ import Storage
 import Types
   ( Issue(..)
   , Page(..)
+  , ProjectItem(..)
   , PullRequest(..)
   , Repo(..)
   , WorkflowJob(..)
@@ -731,6 +732,36 @@ handleAction = case _ of
           , projectItemsLoading = false
           , error = Nothing
           }
+  RefreshProjectItem projectId repoName itemNum -> do
+    st <- H.get
+    result <- H.liftAff
+      (fetchIssue st.token repoName itemNum)
+    case result of
+      Left _ -> pure unit
+      Right (Issue iss) ->
+        case Map.lookup projectId
+          st.projectItems of
+          Nothing -> pure unit
+          Just items ->
+            let
+              updated = map
+                ( \(ProjectItem pi) ->
+                    if pi.repoName == Just repoName
+                      && pi.number == Just itemNum
+                    then ProjectItem pi
+                      { title = iss.title
+                      , body = iss.body
+                      }
+                    else ProjectItem pi
+                )
+                items
+            in
+              H.modify_ _
+                { projectItems = Map.insert
+                    projectId
+                    updated
+                    st.projectItems
+                }
 
 -- | Extract unique SHAs from runs, preserving order.
 extractShas :: Array WorkflowRun -> Array String

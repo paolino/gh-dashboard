@@ -51,6 +51,7 @@ data Action
   | RefreshProjects
   | ExpandProject String
   | RefreshProjectItems String
+  | RefreshProjectItem String String Int
 
 -- | Application state (referenced by view).
 type State =

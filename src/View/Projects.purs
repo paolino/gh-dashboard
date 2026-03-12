@@ -277,9 +277,16 @@ renderItemRow state projId (ProjectItem item) =
         , HP.class_ (HH.ClassName "repo-row")
         ]
         [ HH.td_
-            ( [ refreshButton
-                  (RefreshProjectItems projId)
-              ]
+            ( case item.repoName, item.number of
+                Just repo, Just n ->
+                  [ refreshButton
+                      ( RefreshProjectItem
+                          projId
+                          repo
+                          n
+                      )
+                  ]
+                _, _ -> []
                 <>
                   case item.url of
                     Just url -> [ linkButton url ]
