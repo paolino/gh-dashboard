@@ -825,7 +825,7 @@ handleAction = case _ of
           let
             updated = map
               ( \(ProjectItem pi) ->
-                  if pi.itemId == draftId then
+                  if pi.draftId == Just draftId then
                     ProjectItem pi
                       { title = newTitle }
                   else ProjectItem pi
