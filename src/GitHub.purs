@@ -46,9 +46,8 @@ import Data.Int (fromString) as Int
 import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.HTTP.Method (Method(..))
 import Data.String
-  ( Pattern(..), indexOf, drop, take, replaceAll
+  ( Pattern(..), indexOf, drop, take
   )
-import Data.String.Pattern (Replacement(..))
 import Data.Traversable (traverse)
 import Effect.Aff (Aff, try)
 import Effect.Exception (message)
@@ -467,12 +466,14 @@ fetchCommitPRs token fullName sha = do
 ghGraphQL
   :: String
   -> String
+  -> Json
   -> Aff (Either String Json)
-ghGraphQL token query = do
+ghGraphQL token query variables = do
   result <- try do
     let
       body = encodeJson
         ( "query" := query
+            ~> "variables" := variables
             ~> jsonEmptyObject
         )
     resp <- fetch "https://api.github.com/graphql"
@@ -512,40 +513,44 @@ projectsListQuery =
   """
 
 -- | Detail query: items for a single project.
-projectItemsQuery
-  :: String -> Maybe String -> String
-projectItemsQuery nodeId mCursor =
-  let
-    afterArg = case mCursor of
-      Nothing -> ""
-      Just c -> " after: \"" <> c <> "\""
-  in
-    "query { node(id: \"" <> nodeId <> "\") {"
-      <> " ... on ProjectV2 {"
-      <> " fields(first: 20) { nodes {"
-      <> " ... on ProjectV2SingleSelectField {"
-      <> " id name options { id name }"
-      <> " } } }"
-      <> " items(first: 100" <> afterArg <> ") {"
-      <> " pageInfo { hasNextPage endCursor }"
-      <> " nodes { id fieldValues(first: 10) { nodes {"
-    <> " ... on ProjectV2ItemFieldSingleSelectValue"
-    <> " { name field {"
-    <> " ... on ProjectV2SingleSelectField"
-    <> " { name } } }"
-    <> " ... on ProjectV2ItemFieldLabelValue"
-    <> " { labels(first: 10) { nodes { name } }"
-    <> " field {"
-    <> " ... on ProjectV2FieldCommon"
-    <> " { name } } }"
-    <> " } }"
-    <> " content {"
-    <> " ... on Issue { title url number body"
-    <> " repository { nameWithOwner } }"
-    <> " ... on PullRequest { title url number"
-    <> " body repository { nameWithOwner } }"
-    <> " ... on DraftIssue { id title body }"
-    <> " } } } } } }"
+projectItemsQuery :: String
+projectItemsQuery =
+  """
+  query($nodeId: ID!, $cursor: String) {
+    node(id: $nodeId) {
+      ... on ProjectV2 {
+        fields(first: 20) { nodes {
+          ... on ProjectV2SingleSelectField {
+            id name options { id name }
+          }
+        } }
+        items(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes { id fieldValues(first: 10) { nodes {
+            ... on ProjectV2ItemFieldSingleSelectValue {
+              name field {
+                ... on ProjectV2SingleSelectField { name }
+              }
+            }
+            ... on ProjectV2ItemFieldLabelValue {
+              labels(first: 10) { nodes { name } }
+              field {
+                ... on ProjectV2FieldCommon { name }
+              }
+            }
+          } }
+          content {
+            ... on Issue { title url number body
+              repository { nameWithOwner } }
+            ... on PullRequest { title url number body
+              repository { nameWithOwner } }
+            ... on DraftIssue { id title body }
+          } }
+        }
+      }
+    }
+  }
+  """
 
 -- | Fetch the authenticated user's Projects v2
 -- | (light: no items, just metadata).
@@ -554,6 +559,7 @@ fetchUserProjects
   -> Aff (Either String (Array Project))
 fetchUserProjects token = do
   result <- ghGraphQL token projectsListQuery
+    jsonEmptyObject
   case result of
     Left err -> pure $ Left err
     Right json ->
@@ -614,8 +620,14 @@ fetchProjectItems token projectId =
   fetchPage Nothing []
   where
   fetchPage mCursor acc = do
+    let
+      vars = encodeJson
+        ( "nodeId" := projectId
+            ~> "cursor" := mCursor
+            ~> jsonEmptyObject
+        )
     result <- ghGraphQL token
-      (projectItemsQuery projectId mCursor)
+      projectItemsQuery vars
     case result of
       Left err -> pure $ Left err
       Right json ->
@@ -853,23 +865,30 @@ updateItemStatus
   -> Aff (Either String Unit)
 updateItemStatus token projectId itemId fieldId optionId = do
   let
-    mutation =
-      "mutation { updateProjectV2ItemFieldValue("
-        <> "input: {"
-        <> " projectId: \""
-        <> projectId
-        <> "\""
-        <> " itemId: \""
-        <> itemId
-        <> "\""
-        <> " fieldId: \""
-        <> fieldId
-        <> "\""
-        <> " value: { singleSelectOptionId: \""
-        <> optionId
-        <> "\" }"
-        <> " }) { projectV2Item { id } } }"
-  result <- ghGraphQL token mutation
+    vars = encodeJson
+      ( "projectId" := projectId
+          ~> "itemId" := itemId
+          ~> "fieldId" := fieldId
+          ~> "optionId" := optionId
+          ~> jsonEmptyObject
+      )
+  result <- ghGraphQL token
+    """
+    mutation(
+      $projectId: ID!
+      $itemId: ID!
+      $fieldId: ID!
+      $optionId: String!
+    ) {
+      updateProjectV2ItemFieldValue(input: {
+        projectId: $projectId
+        itemId: $itemId
+        fieldId: $fieldId
+        value: { singleSelectOptionId: $optionId }
+      }) { projectV2Item { id } }
+    }
+    """
+    vars
   case result of
     Left err -> pure $ Left err
     Right _ -> pure $ Right unit
@@ -882,17 +901,21 @@ addDraftItem
   -> Aff (Either String Unit)
 addDraftItem token projectId title = do
   let
-    mutation =
-      "mutation { addProjectV2DraftIssue("
-        <> "input: {"
-        <> " projectId: \""
-        <> projectId
-        <> "\""
-        <> " title: \""
-        <> escapeGql title
-        <> "\""
-        <> " }) { projectItem { id } } }"
-  result <- ghGraphQL token mutation
+    vars = encodeJson
+      ( "projectId" := projectId
+          ~> "title" := title
+          ~> jsonEmptyObject
+      )
+  result <- ghGraphQL token
+    """
+    mutation($projectId: ID!, $title: String!) {
+      addProjectV2DraftIssue(input: {
+        projectId: $projectId
+        title: $title
+      }) { projectItem { id } }
+    }
+    """
+    vars
   case result of
     Left err -> pure $ Left err
     Right _ -> pure $ Right unit
@@ -905,17 +928,21 @@ updateDraftItem
   -> Aff (Either String Unit)
 updateDraftItem token draftId title = do
   let
-    mutation =
-      "mutation { updateProjectV2DraftIssue("
-        <> "input: {"
-        <> " draftIssueId: \""
-        <> draftId
-        <> "\""
-        <> " title: \""
-        <> escapeGql title
-        <> "\""
-        <> " }) { draftIssue { id } } }"
-  result <- ghGraphQL token mutation
+    vars = encodeJson
+      ( "draftIssueId" := draftId
+          ~> "title" := title
+          ~> jsonEmptyObject
+      )
+  result <- ghGraphQL token
+    """
+    mutation($draftIssueId: ID!, $title: String!) {
+      updateProjectV2DraftIssue(input: {
+        draftIssueId: $draftIssueId
+        title: $title
+      }) { draftIssue { id } }
+    }
+    """
+    vars
   case result of
     Left err -> pure $ Left err
     Right _ -> pure $ Right unit
@@ -928,23 +955,21 @@ deleteProjectItem
   -> Aff (Either String Unit)
 deleteProjectItem token projectId itemId = do
   let
-    mutation =
-      "mutation { deleteProjectV2Item("
-        <> "input: {"
-        <> " projectId: \""
-        <> projectId
-        <> "\""
-        <> " itemId: \""
-        <> itemId
-        <> "\""
-        <> " }) { deletedItemId } }"
-  result <- ghGraphQL token mutation
+    vars = encodeJson
+      ( "projectId" := projectId
+          ~> "itemId" := itemId
+          ~> jsonEmptyObject
+      )
+  result <- ghGraphQL token
+    """
+    mutation($projectId: ID!, $itemId: ID!) {
+      deleteProjectV2Item(input: {
+        projectId: $projectId
+        itemId: $itemId
+      }) { deletedItemId }
+    }
+    """
+    vars
   case result of
     Left err -> pure $ Left err
     Right _ -> pure $ Right unit
-
--- | Escape a string for use in a GraphQL query.
-escapeGql :: String -> String
-escapeGql = replaceAll (Pattern "\\") (Replacement "\\\\")
-  >>> replaceAll (Pattern "\"") (Replacement "\\\"")
-  >>> replaceAll (Pattern "\n") (Replacement "\\n")
