@@ -8,6 +8,7 @@ module Storage
   , loadViewState
   , saveViewState
   , defaultViewState
+  , clearToken
   , clearAll
   ) where
 
@@ -228,6 +229,12 @@ loadViewState = do
                     Right j -> decodeSet j
                     _ -> Set.empty
               }
+
+clearToken :: Effect Unit
+clearToken = do
+  w <- window
+  s <- localStorage w
+  Storage.removeItem storageKeyToken s
 
 clearAll :: Effect Unit
 clearAll = do

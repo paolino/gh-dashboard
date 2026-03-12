@@ -231,6 +231,12 @@ renderToolbar state =
         ]
         [ HH.text "\x2B06" ]
     , HH.button
+        [ HE.onClick \_ -> ResetToken
+        , HP.class_ (HH.ClassName "btn-hide")
+        , HP.title "Reset token"
+        ]
+        [ HH.text "\x1F511" ]
+    , HH.button
         [ HE.onClick \_ -> ResetAll
         , HP.class_ (HH.ClassName "btn-hide")
         , HP.title "Reset all data"
