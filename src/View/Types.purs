@@ -52,6 +52,7 @@ data Action
   | ExpandProject String
   | RefreshProjectItems String
   | RefreshProjectItem String String Int
+  | ToggleProjectRepoFilter String
 
 -- | Application state (referenced by view).
 type State =
@@ -84,4 +85,5 @@ type State =
   , expandedProject :: Maybe String
   , projectItems :: Map String (Array ProjectItem)
   , projectItemsLoading :: Boolean
+  , projectRepoFilters :: Set String
   }

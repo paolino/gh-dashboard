@@ -116,6 +116,7 @@ initialState =
   , expandedProject: Nothing
   , projectItems: Map.empty
   , projectItemsLoading: false
+  , projectRepoFilters: Set.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -765,6 +766,13 @@ handleAction = case _ of
                     updated
                     st.projectItems
                 }
+  ToggleProjectRepoFilter repo -> do
+    st <- H.get
+    let filters =
+          if Set.member repo st.projectRepoFilters
+          then Set.delete repo st.projectRepoFilters
+          else Set.insert repo st.projectRepoFilters
+    H.modify_ _ { projectRepoFilters = filters }
 
 -- | Extract unique SHAs from runs, preserving order.
 extractShas :: Array WorkflowRun -> Array String

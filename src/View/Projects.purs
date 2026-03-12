@@ -6,7 +6,9 @@ module View.Projects
 
 import Prelude
 
-import Data.Array (filter, length, null)
+import Data.Array (filter, length, null, sort)
+import Data.Function (on)
+import Data.Array as Array
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
@@ -15,7 +17,7 @@ import Halogen.HTML.Core (AttrName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Types (Project(..), ProjectItem(..))
-import View.DetailWidgets (refreshButton)
+import View.DetailWidgets (renderLabelSelector, refreshButton)
 import View.Helpers (linkButton, renderMarkdownRow)
 import View.Types (Action(..), State)
 
@@ -151,19 +153,65 @@ renderProjectDetail state projectId =
                   ]
                   [ HH.text "No items loaded" ]
               Just items ->
-                HH.div_
-                  ( map
-                      ( \col ->
-                          renderStatusSection
-                            state
-                            projectId
-                            col.name
-                            col.items
+                let
+                  allRepos = collectRepoNames items
+                  filtered =
+                    if
+                      Set.isEmpty
+                        state.projectRepoFilters then items
+                    else filter
+                      ( \(ProjectItem i) ->
+                          Set.member
+                            ( fromMaybe "(no repo)"
+                                i.repoName
+                            )
+                            state.projectRepoFilters
                       )
-                      (groupByStatus items)
-                  )
+                      items
+                in
+                  HH.div_
+                    ( ( if null allRepos then []
+                        else
+                          [ renderLabelSelector
+                              state.projectRepoFilters
+                              ToggleProjectRepoFilter
+                              allRepos
+                          ]
+                      )
+                        <> map
+                          ( \col ->
+                              renderStatusSection
+                                state
+                                projectId
+                                col.name
+                                col.items
+                          )
+                          (groupByStatus filtered)
+                    )
         ]
     ]
+
+-- | Collect unique repo names with counts.
+collectRepoNames
+  :: Array ProjectItem
+  -> Array { name :: String, count :: Int }
+collectRepoNames items =
+  let
+    allNames = map
+      ( \(ProjectItem i) ->
+          fromMaybe "(no repo)" i.repoName
+      )
+      items
+    unique = sort $ Set.toUnfoldable
+      $ Set.fromFoldable allNames
+  in
+    Array.sortBy (flip compare `on` _.count) $ map
+      ( \n ->
+          { name: n
+          , count: length (filter (_ == n) allNames)
+          }
+      )
+      unique
 
 -- | Column order for status values.
 statusOrder :: Array String
