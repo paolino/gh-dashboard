@@ -14,6 +14,7 @@ import Types
   , ProjectItem
   , Repo
   , RepoDetail
+  , StatusField
   )
 
 -- | Actions emitted by the view.
@@ -53,6 +54,7 @@ data Action
   | RefreshProjectItems String
   | RefreshProjectItem String String Int
   | ToggleProjectRepoFilter String
+  | SetItemStatus String String String
 
 -- | Application state (referenced by view).
 type State =
@@ -86,4 +88,5 @@ type State =
   , projectItems :: Map String (Array ProjectItem)
   , projectItemsLoading :: Boolean
   , projectRepoFilters :: Set String
+  , projectStatusFields :: Map String StatusField
   }

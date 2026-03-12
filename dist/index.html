@@ -146,6 +146,10 @@
     .filter-row.clickable { cursor: pointer; }
     .filter-row.clickable:hover { color: var(--text); background: var(--bg-elevated); }
     .filter-row.active { color: var(--accent); font-weight: 500; }
+    .status-selector { display: inline-flex; gap: 2px; }
+    .status-opt { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: var(--bg-elevated); color: var(--text-dim); cursor: pointer; }
+    .status-opt:hover { color: var(--text); background: var(--bg-surface); }
+    .status-opt.active { background: var(--accent); color: #fff; }
     .draft-tag { background: #3e2723; color: #ffab91; }
     body.light-theme .draft-tag { background: #fbe9e7; color: #d84315; }
     .detail-body { color: var(--text); font-size: 12px; padding: 6px 0 4px; line-height: 1.4; word-break: break-word; }

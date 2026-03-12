@@ -12,6 +12,7 @@ module Types
   , Assignee
   , Project(..)
   , ProjectItem(..)
+  , StatusField
   , Page(..)
   ) where
 
@@ -263,7 +264,8 @@ newtype Project = Project
 
 -- | An item on a project board.
 newtype ProjectItem = ProjectItem
-  { title :: String
+  { itemId :: String
+  , title :: String
   , status :: Maybe String
   , itemType :: String
   , url :: Maybe String
@@ -271,6 +273,13 @@ newtype ProjectItem = ProjectItem
   , labels :: Array String
   , number :: Maybe Int
   , body :: Maybe String
+  }
+
+-- | Status field metadata for a project.
+type StatusField =
+  { fieldId :: String
+  , options ::
+      Array { optionId :: String, name :: String }
   }
 
 -- | Cached detail for an expanded repo.

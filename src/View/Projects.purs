@@ -17,7 +17,7 @@ import Halogen.HTML as HH
 import Halogen.HTML.Core (AttrName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
-import Types (Project(..), ProjectItem(..))
+import Types (Project(..), ProjectItem(..), StatusField)
 import View.DetailWidgets (refreshButton)
 import View.Helpers (linkButton, renderMarkdownRow)
 import View.Types (Action(..), State)
@@ -135,7 +135,7 @@ renderProjectDetail state projectId =
   HH.tr
     [ HP.class_ (HH.ClassName "detail-panel") ]
     [ HH.td
-        [ HP.colSpan 3 ]
+        [ HP.colSpan 4 ]
         [ if state.projectItemsLoading then
             HH.div
               [ HP.class_
@@ -426,11 +426,16 @@ renderStatusSection state projId name items =
                         [ HH.text "Title" ]
                     , HH.th_
                         [ HH.text "Repo" ]
+                    , HH.th_
+                        [ HH.text "Status" ]
                     ]
                 ]
             , HH.tbody_
                 ( items >>= renderItemRow state
                     projId
+                    ( Map.lookup projId
+                        state.projectStatusFields
+                    )
                 )
             ]
       ]
@@ -440,13 +445,15 @@ renderItemRow
   :: forall w
    . State
   -> String
+  -> Maybe StatusField
   -> ProjectItem
   -> Array (HH.HTML w Action)
-renderItemRow state projId (ProjectItem item) =
+renderItemRow state projId mSf (ProjectItem item) =
   let
     key = "proj-item-" <> projId <> "-"
       <> item.title
     isOpen = Set.member key state.expandedItems
+    curStatus = fromMaybe "(no status)" item.status
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
@@ -522,6 +529,48 @@ renderItemRow state projId (ProjectItem item) =
                         item.repoName
                     )
                 ]
+            ]
+        , HH.td_
+            [ case mSf of
+                Nothing ->
+                  HH.span
+                    [ HP.class_
+                        (HH.ClassName "badge")
+                    ]
+                    [ HH.text curStatus ]
+                Just sf ->
+                  HH.span
+                    [ HP.class_
+                        ( HH.ClassName
+                            "status-selector"
+                        )
+                    ]
+                    ( map
+                        ( \opt ->
+                            HH.span
+                              [ HP.class_
+                                  ( HH.ClassName
+                                      ( "status-opt"
+                                          <>
+                                            if
+                                              opt.name
+                                                == curStatus then " active"
+                                            else ""
+                                      )
+                                  )
+                              , HE.onClick \_ ->
+                                  SetItemStatus
+                                    projId
+                                    item.itemId
+                                    opt.name
+                              , HP.attr
+                                  (AttrName "onclick")
+                                  "event.stopPropagation()"
+                              ]
+                              [ HH.text opt.name ]
+                        )
+                        sf.options
+                    )
             ]
         ]
     ]

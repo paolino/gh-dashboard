@@ -25,6 +25,7 @@ import GitHub
   , fetchUserProjects
   , fetchWorkflowJobs
   , fetchWorkflowRuns
+  , updateItemStatus
   )
 import Halogen as H
 import Halogen.Aff as HA
@@ -117,6 +118,7 @@ initialState =
   , projectItems: Map.empty
   , projectItemsLoading: false
   , projectRepoFilters: Set.empty
+  , projectStatusFields: Map.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -727,15 +729,24 @@ handleAction = case _ of
           { error = Just err
           , projectItemsLoading = false
           }
-      Right items ->
+      Right res -> do
         H.modify_ _
           { projectItems = Map.insert
               projectId
-              items
+              res.items
               st.projectItems
           , projectItemsLoading = false
           , error = Nothing
           }
+        case res.statusField of
+          Just sf ->
+            H.modify_ _
+              { projectStatusFields = Map.insert
+                  projectId
+                  sf
+                  st.projectStatusFields
+              }
+          Nothing -> pure unit
   RefreshProjectItem projectId repoName itemNum -> do
     st <- H.get
     result <- H.liftAff
@@ -773,6 +784,49 @@ handleAction = case _ of
           then Set.delete repo st.projectRepoFilters
           else Set.insert repo st.projectRepoFilters
     H.modify_ _ { projectRepoFilters = filters }
+  SetItemStatus projectId itemId newStatus -> do
+    st <- H.get
+    case Map.lookup projectId
+      st.projectStatusFields of
+      Nothing -> pure unit
+      Just sf ->
+        case Array.find
+          (\o -> o.name == newStatus)
+          sf.options of
+          Nothing -> pure unit
+          Just opt -> do
+            -- optimistic update
+            case Map.lookup projectId
+              st.projectItems of
+              Nothing -> pure unit
+              Just items ->
+                let
+                  updated = map
+                    ( \(ProjectItem pi) ->
+                        if pi.itemId == itemId then
+                          ProjectItem pi
+                            { status = Just newStatus
+                            }
+                        else ProjectItem pi
+                    )
+                    items
+                in
+                  H.modify_ _
+                    { projectItems = Map.insert
+                        projectId
+                        updated
+                        st.projectItems
+                    }
+            result <- H.liftAff $
+              updateItemStatus st.token projectId
+                itemId
+                sf.fieldId
+                opt.optionId
+            case result of
+              Left err ->
+                H.modify_ _
+                  { error = Just err }
+              Right _ -> pure unit
 
 -- | Extract unique SHAs from runs, preserving order.
 extractShas :: Array WorkflowRun -> Array String

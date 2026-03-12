@@ -16,6 +16,7 @@ module GitHub
   , fetchCommitPRs
   , fetchUserProjects
   , fetchProjectItems
+  , updateItemStatus
   ) where
 
 import Prelude
@@ -35,7 +36,7 @@ import Data.Argonaut.Decode.Error (JsonDecodeError(..))
 import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Argonaut.Encode.Combinators ((~>), (:=))
 import Data.Argonaut.Parser (jsonParser)
-import Data.Array (catMaybes, nubByEq)
+import Data.Array (catMaybes, mapMaybe, nubByEq)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Int (fromString) as Int
@@ -55,6 +56,7 @@ import Types
   , Issue
   , Project(..)
   , ProjectItem(..)
+  , StatusField
   , PullRequest
   , Repo
   , WorkflowJob
@@ -507,8 +509,13 @@ projectsListQuery =
 projectItemsQuery :: String -> String
 projectItemsQuery nodeId =
   "query { node(id: \"" <> nodeId <> "\") {"
-    <> " ... on ProjectV2 { items(first: 100) {"
-    <> " nodes { fieldValues(first: 10) { nodes {"
+    <> " ... on ProjectV2 {"
+    <> " fields(first: 20) { nodes {"
+    <> " ... on ProjectV2SingleSelectField {"
+    <> " id name options { id name }"
+    <> " } } }"
+    <> " items(first: 100) {"
+    <> " nodes { id fieldValues(first: 10) { nodes {"
     <> " ... on ProjectV2ItemFieldSingleSelectValue"
     <> " { name field {"
     <> " ... on ProjectV2SingleSelectField"
@@ -584,7 +591,12 @@ parseProject json = case toObject json of
 fetchProjectItems
   :: String
   -> String
-  -> Aff (Either String (Array ProjectItem))
+  -> Aff
+       ( Either String
+           { items :: Array ProjectItem
+           , statusField :: Maybe StatusField
+           }
+       )
 fetchProjectItems token projectId = do
   result <- ghGraphQL token
     (projectItemsQuery projectId)
@@ -595,7 +607,11 @@ fetchProjectItems token projectId = do
 
 -- | Navigate GraphQL response to project items.
 navigateProjectItems
-  :: Json -> Either String (Array ProjectItem)
+  :: Json
+  -> Either String
+       { items :: Array ProjectItem
+       , statusField :: Maybe StatusField
+       }
 navigateProjectItems json = do
   obj <- note "Expected object"
     (toObject json)
@@ -605,6 +621,7 @@ navigateProjectItems json = do
   nodeJson <- lmap show $ dataObj .: "node"
   nodeObj <- note "Expected node object"
     (toObject nodeJson)
+  let statusField_ = parseStatusField nodeJson
   itemsJson <- lmap show $
     nodeObj .: "items"
   itemsObj <- note "Expected items object"
@@ -612,7 +629,10 @@ navigateProjectItems json = do
   itemNodes <- lmap show $
     itemsObj .: "nodes"
   items <- traverse parseProjectItem itemNodes
-  Right $ catMaybes items
+  Right
+    { items: catMaybes items
+    , statusField: statusField_
+    }
 
 -- | Helper: convert Maybe to Either.
 note :: forall a. String -> Maybe a -> Either String a
@@ -625,6 +645,7 @@ parseProjectItem
 parseProjectItem json = case toObject json of
   Nothing -> Left "Expected item object"
   Just obj -> do
+    itemId_ <- lmap show $ obj .: "id"
     contentJson <- lmap show $ obj .: "content"
     case toObject contentJson of
       Nothing -> Right Nothing
@@ -668,7 +689,8 @@ parseProjectItem json = case toObject json of
                 fvNodes
               labels_ = extractLabels fvNodes
             Right $ Just $ ProjectItem
-              { title: title_
+              { itemId: itemId_
+              , title: title_
               , status: status_
               , itemType: itemType_
               , url: url_
@@ -725,3 +747,79 @@ extractLabels nodes =
                   Left _ -> [ Nothing ]
               Nothing -> [ Nothing ]
           Left _ -> [ Nothing ]
+
+-- | Parse the Status field metadata from project fields.
+parseStatusField :: Json -> Maybe StatusField
+parseStatusField json =
+  case toObject json of
+    Nothing -> Nothing
+    Just obj ->
+      case obj .: "fields" of
+        Left _ -> Nothing
+        Right fieldsJson ->
+          case toObject fieldsJson of
+            Nothing -> Nothing
+            Just fObj ->
+              case fObj .: "nodes" of
+                Left _ -> Nothing
+                Right (nodes :: Array Json) ->
+                  Array.head $
+                    mapMaybe parseOneField nodes
+  where
+  parseOneField :: Json -> Maybe StatusField
+  parseOneField json = case toObject json of
+    Nothing -> Nothing
+    Just obj ->
+      case obj .: "name", obj .: "id" of
+        Right "Status", Right fid ->
+          case obj .: "options" of
+            Right
+              ( opts
+                  :: Array
+                       { id :: String
+                       , name :: String
+                       }
+              ) ->
+              Just
+                { fieldId: fid
+                , options: map
+                    ( \o ->
+                        { optionId: o.id
+                        , name: o.name
+                        }
+                    )
+                    opts
+                }
+            Left _ -> Nothing
+        _, _ -> Nothing
+
+-- | Update the status of a project item.
+updateItemStatus
+  :: String
+  -> String
+  -> String
+  -> String
+  -> String
+  -> Aff (Either String Unit)
+updateItemStatus token projectId itemId fieldId optionId = do
+  let
+    mutation =
+      "mutation { updateProjectV2ItemFieldValue("
+        <> "input: {"
+        <> " projectId: \""
+        <> projectId
+        <> "\""
+        <> " itemId: \""
+        <> itemId
+        <> "\""
+        <> " fieldId: \""
+        <> fieldId
+        <> "\""
+        <> " value: { singleSelectOptionId: \""
+        <> optionId
+        <> "\" }"
+        <> " }) { projectV2Item { id } } }"
+  result <- ghGraphQL token mutation
+  case result of
+    Left err -> pure $ Left err
+    Right _ -> pure $ Right unit
