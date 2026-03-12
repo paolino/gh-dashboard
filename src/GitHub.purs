@@ -19,6 +19,7 @@ module GitHub
   , updateItemStatus
   , addDraftItem
   , updateDraftItem
+  , deleteProjectItem
   ) where
 
 import Prelude
@@ -914,6 +915,29 @@ updateDraftItem token draftId title = do
         <> escapeGql title
         <> "\""
         <> " }) { draftIssue { id } } }"
+  result <- ghGraphQL token mutation
+  case result of
+    Left err -> pure $ Left err
+    Right _ -> pure $ Right unit
+
+-- | Delete a project item.
+deleteProjectItem
+  :: String
+  -> String
+  -> String
+  -> Aff (Either String Unit)
+deleteProjectItem token projectId itemId = do
+  let
+    mutation =
+      "mutation { deleteProjectV2Item("
+        <> "input: {"
+        <> " projectId: \""
+        <> projectId
+        <> "\""
+        <> " itemId: \""
+        <> itemId
+        <> "\""
+        <> " }) { deletedItemId } }"
   result <- ghGraphQL token mutation
   case result of
     Left err -> pure $ Left err

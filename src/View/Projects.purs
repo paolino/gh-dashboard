@@ -518,6 +518,18 @@ renderItemRow state projId mSf (ProjectItem item) =
                               "event.stopPropagation()"
                           ]
                           [ HH.text "\x270E" ]
+                      , HH.button
+                          [ HP.class_
+                              (HH.ClassName "btn-hide")
+                          , HP.title "Delete"
+                          , HE.onClick \_ ->
+                              DeleteItem projId
+                                item.itemId
+                          , HP.attr
+                              (AttrName "onclick")
+                              "event.stopPropagation()"
+                          ]
+                          [ HH.text "\x2716" ]
                       ]
                     _ -> []
             )

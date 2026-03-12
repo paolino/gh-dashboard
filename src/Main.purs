@@ -28,6 +28,7 @@ import GitHub
   , updateItemStatus
   , addDraftItem
   , updateDraftItem
+  , deleteProjectItem
   )
 import Halogen as H
 import Halogen.Aff as HA
@@ -844,6 +845,31 @@ handleAction = case _ of
         Left err ->
           H.modify_ _ { error = Just err }
         Right _ -> pure unit
+  DeleteItem projectId itemId -> do
+    st <- H.get
+    -- optimistic remove
+    case Map.lookup projectId st.projectItems of
+      Nothing -> pure unit
+      Just items ->
+        let
+          updated = filter
+            ( \(ProjectItem pi) ->
+                pi.itemId /= itemId
+            )
+            items
+        in
+          H.modify_ _
+            { projectItems = Map.insert
+                projectId
+                updated
+                st.projectItems
+            }
+    result <- H.liftAff $
+      deleteProjectItem st.token projectId itemId
+    case result of
+      Left err ->
+        H.modify_ _ { error = Just err }
+      Right _ -> pure unit
   SetItemStatus projectId itemId newStatus -> do
     st <- H.get
     case Map.lookup projectId
