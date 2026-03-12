@@ -60,6 +60,7 @@ data Action
   | StartEditItem String String
   | SetEditItemTitle String
   | SubmitEditItem String String String
+  | DeleteItem String String
 
 -- | Application state (referenced by view).
 type State =
