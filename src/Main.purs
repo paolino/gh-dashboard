@@ -47,20 +47,12 @@ import RepoUtils
   )
 import Storage
   ( clearAll
-  , loadHidden
-  , loadIssueLabelFilters
-  , loadPRLabelFilters
   , loadRepoList
-  , loadTheme
   , loadToken
-  , loadPage
-  , saveIssueLabelFilters
-  , savePRLabelFilters
+  , loadViewState
   , saveRepoList
-  , saveTheme
   , saveToken
-  , saveHidden
-  , savePage
+  , saveViewState
   )
 import Types
   ( Issue(..)
@@ -138,6 +130,27 @@ render state =
   else
     renderTokenForm state
 
+-- | Save current view state to localStorage.
+persistView
+  :: forall o
+   . H.HalogenM State Action () o Aff Unit
+persistView = do
+  st <- H.get
+  liftEffect $ saveViewState
+    { currentPage: st.currentPage
+    , expanded: st.expanded
+    , expandedProject: st.expandedProject
+    , expandedItems: st.expandedItems
+    , filterText: st.filterText
+    , hiddenItems: st.hiddenItems
+    , darkTheme: st.darkTheme
+    , issueLabelFilters: st.issueLabelFilters
+    , prLabelFilters: st.prLabelFilters
+    , workflowStatusFilters:
+        st.workflowStatusFilters
+    , projectRepoFilters: st.projectRepoFilters
+    }
+
 handleAction
   :: forall o
    . Action
@@ -146,19 +159,22 @@ handleAction = case _ of
   Initialize -> do
     saved <- liftEffect loadToken
     repoList <- liftEffect loadRepoList
-    hidden <- liftEffect loadHidden
-    dark <- liftEffect loadTheme
-    issueLabels <- liftEffect loadIssueLabelFilters
-    prLabels <- liftEffect loadPRLabelFilters
-    page <- liftEffect loadPage
-    liftEffect $ setBodyTheme dark
+    vs <- liftEffect loadViewState
+    liftEffect $ setBodyTheme vs.darkTheme
     H.modify_ _
       { repoList = repoList
-      , hiddenItems = hidden
-      , darkTheme = dark
-      , issueLabelFilters = issueLabels
-      , prLabelFilters = prLabels
-      , currentPage = page
+      , hiddenItems = vs.hiddenItems
+      , darkTheme = vs.darkTheme
+      , issueLabelFilters = vs.issueLabelFilters
+      , prLabelFilters = vs.prLabelFilters
+      , workflowStatusFilters =
+          vs.workflowStatusFilters
+      , currentPage = vs.currentPage
+      , expanded = vs.expanded
+      , expandedProject = vs.expandedProject
+      , expandedItems = vs.expandedItems
+      , filterText = vs.filterText
+      , projectRepoFilters = vs.projectRepoFilters
       }
     case saved of
       "" -> pure unit
@@ -166,7 +182,7 @@ handleAction = case _ of
         H.modify_ _
           { token = tok, hasToken = true }
         doRefresh tok
-        handleAction (SwitchPage page)
+        handleAction (SwitchPage vs.currentPage)
   SetToken tok ->
     H.modify_ _ { token = tok }
   SubmitToken -> do
@@ -465,10 +481,11 @@ handleAction = case _ of
               loadWorkflowShaDetails fullName
   ToggleExpand fullName -> do
     st <- H.get
-    if st.expanded == Just fullName then
+    if st.expanded == Just fullName then do
       H.modify_ _
         { expanded = Nothing
         }
+      persistView
     else do
       let
         switching = st.expanded /= Nothing
@@ -483,6 +500,7 @@ handleAction = case _ of
             if switching then Set.empty
             else st.expandedItems
         }
+    persistView
   ToggleItem key -> do
     st <- H.get
     let
@@ -495,6 +513,7 @@ handleAction = case _ of
           else
             Set.delete key st.expandedItems
       }
+    persistView
     when opening do
       let
         empty = case st.details of
@@ -515,8 +534,9 @@ handleAction = case _ of
         "section-workflows" ->
           handleAction RefreshWorkflows
         _ -> pure unit
-  SetFilter txt ->
+  SetFilter txt -> do
     H.modify_ _ { filterText = txt }
+    persistView
   DragStart fullName ->
     H.modify_ _ { dragging = Just fullName }
   DragDrop targetName -> do
@@ -612,7 +632,7 @@ handleAction = case _ of
           Set.delete url st.hiddenItems
         else Set.insert url st.hiddenItems
     H.modify_ _ { hiddenItems = newHidden }
-    liftEffect $ saveHidden newHidden
+    persistView
   CopyText text ->
     liftEffect $ copyToClipboard text
   ToggleIssueLabelFilter label -> do
@@ -628,7 +648,7 @@ handleAction = case _ of
           Set.insert label
             st.issueLabelFilters
     H.modify_ _ { issueLabelFilters = newFilters }
-    liftEffect $ saveIssueLabelFilters newFilters
+    persistView
   TogglePRLabelFilter label -> do
     st <- H.get
     let
@@ -639,7 +659,7 @@ handleAction = case _ of
         else
           Set.insert label st.prLabelFilters
     H.modify_ _ { prLabelFilters = newFilters }
-    liftEffect $ savePRLabelFilters newFilters
+    persistView
   ToggleWorkflowStatusFilter status -> do
     st <- H.get
     let
@@ -654,13 +674,13 @@ handleAction = case _ of
             st.workflowStatusFilters
     H.modify_ _
       { workflowStatusFilters = newFilters }
+    persistView
   ToggleTheme -> do
     st <- H.get
     let dark = not st.darkTheme
     H.modify_ _ { darkTheme = dark }
-    liftEffect do
-      saveTheme dark
-      setBodyTheme dark
+    liftEffect $ setBodyTheme dark
+    persistView
   ExportStorage ->
     liftEffect FFIStorage.exportStorage
   ImportStorage ->
@@ -691,7 +711,7 @@ handleAction = case _ of
         }
   SwitchPage page -> do
     H.modify_ _ { currentPage = page }
-    liftEffect $ savePage page
+    persistView
     when (page == ProjectsPage) do
       st <- H.get
       when (null st.projects) do
@@ -715,19 +735,24 @@ handleAction = case _ of
           }
   ExpandProject projectId -> do
     st <- H.get
-    if st.expandedProject == Just projectId then
-      H.modify_ _
-        { expandedProject = Nothing }
-    else do
-      H.modify_ _
-        { expandedProject = Just projectId
-        , expandedItems = Set.empty
-        }
-      when
-        (not (Map.member projectId st.projectItems))
-        do
-          handleAction
-            (RefreshProjectItems projectId)
+    let
+      newExp =
+        if st.expandedProject == Just projectId then
+          Nothing
+        else Just projectId
+    H.modify_ _
+      { expandedProject = newExp
+      , expandedItems =
+          if newExp == Nothing then
+            st.expandedItems
+          else Set.empty
+      }
+    persistView
+    when
+      (not (Map.member projectId st.projectItems))
+      do
+        handleAction
+          (RefreshProjectItems projectId)
   RefreshProjectItems projectId -> do
     st <- H.get
     let isFirstLoad =
@@ -797,6 +822,7 @@ handleAction = case _ of
           then Set.delete repo st.projectRepoFilters
           else Set.insert repo st.projectRepoFilters
     H.modify_ _ { projectRepoFilters = filters }
+    persistView
   SetNewItemTitle t ->
     H.modify_ _ { newItemTitle = t }
   SubmitNewItem projectId -> do

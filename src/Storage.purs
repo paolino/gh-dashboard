@@ -1,38 +1,66 @@
 -- | LocalStorage helpers for persisting dashboard state.
 module Storage
-  ( loadToken
+  ( ViewState
+  , loadToken
   , saveToken
   , loadRepoList
   , saveRepoList
-  , loadHidden
-  , saveHidden
-  , loadTheme
-  , saveTheme
-  , loadIssueLabelFilters
-  , saveIssueLabelFilters
-  , loadPRLabelFilters
-  , savePRLabelFilters
-  , loadPage
-  , savePage
+  , loadViewState
+  , saveViewState
+  , defaultViewState
   , clearAll
   ) where
 
 import Prelude
 
-import Data.Argonaut.Core (stringify)
+import Data.Argonaut.Core (stringify, toObject)
 import Data.Argonaut.Decode.Class (decodeJson)
+import Data.Argonaut.Decode.Combinators ((.:), (.:?))
 import Data.Argonaut.Decode.Error (printJsonDecodeError)
 import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Tuple.Nested ((/\))
 import Data.Set as Set
 import Effect (Effect)
+import Foreign.Object as FO
+import Data.Argonaut.Core as Json
 import Types (Page(..))
 import Web.HTML (window)
 import Web.HTML.Window (localStorage)
 import Web.Storage.Storage as Storage
+
+-- | Persisted view state — everything about what is visible.
+type ViewState =
+  { currentPage :: Page
+  , expanded :: Maybe String
+  , expandedProject :: Maybe String
+  , expandedItems :: Set.Set String
+  , filterText :: String
+  , hiddenItems :: Set.Set String
+  , darkTheme :: Boolean
+  , issueLabelFilters :: Set.Set String
+  , prLabelFilters :: Set.Set String
+  , workflowStatusFilters :: Set.Set String
+  , projectRepoFilters :: Set.Set String
+  }
+
+defaultViewState :: ViewState
+defaultViewState =
+  { currentPage: ReposPage
+  , expanded: Nothing
+  , expandedProject: Nothing
+  , expandedItems: Set.empty
+  , filterText: ""
+  , hiddenItems: Set.empty
+  , darkTheme: true
+  , issueLabelFilters: Set.empty
+  , prLabelFilters: Set.empty
+  , workflowStatusFilters: Set.empty
+  , projectRepoFilters: Set.empty
+  }
 
 storageKeyToken :: String
 storageKeyToken = "gh-dashboard-token"
@@ -40,21 +68,8 @@ storageKeyToken = "gh-dashboard-token"
 storageKeyRepos :: String
 storageKeyRepos = "gh-dashboard-repos"
 
-storageKeyHidden :: String
-storageKeyHidden = "gh-dashboard-hidden"
-
-storageKeyTheme :: String
-storageKeyTheme = "gh-dashboard-dark-theme"
-
-storageKeyIssueLabels :: String
-storageKeyIssueLabels = "gh-dashboard-issue-labels"
-
-storageKeyPRLabels :: String
-storageKeyPRLabels = "gh-dashboard-pr-labels"
-
-storageKeyPage :: String
-storageKeyPage = "gh-dashboard-page"
-
+storageKeyView :: String
+storageKeyView = "gh-dashboard-view"
 
 loadToken :: Effect String
 loadToken = do
@@ -91,77 +106,128 @@ saveRepoList repos = do
     (stringify (encodeJson repos))
     s
 
-loadTheme :: Effect Boolean
-loadTheme = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeyTheme s
-  pure $ case raw of
-    Just "false" -> false
-    _ -> true
+-- | Encode a Set as a JSON array of strings.
+encodeSet :: Set.Set String -> Json.Json
+encodeSet ss =
+  let
+    arr :: Array String
+    arr = Set.toUnfoldable ss
+  in
+    encodeJson arr
 
-saveTheme :: Boolean -> Effect Unit
-saveTheme dark = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeyTheme (show dark) s
+-- | Decode a Set from a JSON array of strings.
+decodeSet :: Json.Json -> Set.Set String
+decodeSet json =
+  case decodeJson json of
+    Right (arr :: Array String) ->
+      Set.fromFoldable arr
+    Left _ -> Set.empty
 
-loadIssueLabelFilters :: Effect (Set.Set String)
-loadIssueLabelFilters = loadStringSet storageKeyIssueLabels
-
-saveIssueLabelFilters :: Set.Set String -> Effect Unit
-saveIssueLabelFilters = saveStringSet storageKeyIssueLabels
-
-loadPRLabelFilters :: Effect (Set.Set String)
-loadPRLabelFilters = loadStringSet storageKeyPRLabels
-
-savePRLabelFilters :: Set.Set String -> Effect Unit
-savePRLabelFilters = saveStringSet storageKeyPRLabels
-
-loadStringSet :: String -> Effect (Set.Set String)
-loadStringSet key = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem key s
-  pure $ case raw of
-    Nothing -> Set.empty
-    Just str ->
-      case
-        jsonParser str
-          >>= (lmap printJsonDecodeError <<< decodeJson)
-        of
-        Right (arr :: Array String) ->
-          Set.fromFoldable arr
-        Left _ -> Set.empty
-
-saveStringSet :: String -> Set.Set String -> Effect Unit
-saveStringSet key vals = do
+-- | Save the full view state as a single JSON blob.
+saveViewState :: ViewState -> Effect Unit
+saveViewState vs = do
   w <- window
   s <- localStorage w
   let
-    arr :: Array String
-    arr = Set.toUnfoldable vals
-  Storage.setItem key (stringify (encodeJson arr)) s
-
-loadPage :: Effect Page
-loadPage = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeyPage s
-  pure $ case raw of
-    Just "ProjectsPage" -> ProjectsPage
-    _ -> ReposPage
-
-savePage :: Page -> Effect Unit
-savePage page = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeyPage
-    ( case page of
-        ReposPage -> "ReposPage"
-        ProjectsPage -> "ProjectsPage"
-    )
+    obj = FO.fromFoldable
+      [ "currentPage" /\ encodeJson
+          ( case vs.currentPage of
+              ReposPage -> "ReposPage"
+              ProjectsPage -> "ProjectsPage"
+          )
+      , "expanded" /\ encodeJson vs.expanded
+      , "expandedProject" /\ encodeJson
+          vs.expandedProject
+      , "expandedItems" /\ encodeSet
+          vs.expandedItems
+      , "filterText" /\ encodeJson vs.filterText
+      , "hiddenItems" /\ encodeSet vs.hiddenItems
+      , "darkTheme" /\ encodeJson vs.darkTheme
+      , "issueLabelFilters" /\ encodeSet
+          vs.issueLabelFilters
+      , "prLabelFilters" /\ encodeSet
+          vs.prLabelFilters
+      , "workflowStatusFilters" /\ encodeSet
+          vs.workflowStatusFilters
+      , "projectRepoFilters" /\ encodeSet
+          vs.projectRepoFilters
+      ]
+  Storage.setItem storageKeyView
+    (stringify (Json.fromObject obj))
     s
+
+-- | Load view state from localStorage.
+loadViewState :: Effect ViewState
+loadViewState = do
+  w <- window
+  s <- localStorage w
+  raw <- Storage.getItem storageKeyView s
+  pure $ case raw of
+    Nothing -> defaultViewState
+    Just str ->
+      case jsonParser str of
+        Left _ -> defaultViewState
+        Right json ->
+          case toObject json of
+            Nothing -> defaultViewState
+            Just obj ->
+              { currentPage:
+                  case lmap printJsonDecodeError
+                    (obj .: "currentPage") of
+                    Right "ProjectsPage" ->
+                      ProjectsPage
+                    _ -> ReposPage
+              , expanded:
+                  case lmap printJsonDecodeError
+                    (obj .:? "expanded") of
+                    Right m -> m
+                    _ -> Nothing
+              , expandedProject:
+                  case lmap printJsonDecodeError
+                    (obj .:? "expandedProject") of
+                    Right m -> m
+                    _ -> Nothing
+              , expandedItems:
+                  case lmap printJsonDecodeError
+                    (obj .: "expandedItems") of
+                    Right j -> decodeSet j
+                    _ -> Set.empty
+              , filterText:
+                  case lmap printJsonDecodeError
+                    (obj .: "filterText") of
+                    Right t -> t
+                    _ -> ""
+              , hiddenItems:
+                  case lmap printJsonDecodeError
+                    (obj .: "hiddenItems") of
+                    Right j -> decodeSet j
+                    _ -> Set.empty
+              , darkTheme:
+                  case lmap printJsonDecodeError
+                    (obj .: "darkTheme") of
+                    Right d -> d
+                    _ -> true
+              , issueLabelFilters:
+                  case lmap printJsonDecodeError
+                    (obj .: "issueLabelFilters") of
+                    Right j -> decodeSet j
+                    _ -> Set.empty
+              , prLabelFilters:
+                  case lmap printJsonDecodeError
+                    (obj .: "prLabelFilters") of
+                    Right j -> decodeSet j
+                    _ -> Set.empty
+              , workflowStatusFilters:
+                  case lmap printJsonDecodeError
+                    (obj .: "workflowStatusFilters") of
+                    Right j -> decodeSet j
+                    _ -> Set.empty
+              , projectRepoFilters:
+                  case lmap printJsonDecodeError
+                    (obj .: "projectRepoFilters") of
+                    Right j -> decodeSet j
+                    _ -> Set.empty
+              }
 
 clearAll :: Effect Unit
 clearAll = do
@@ -169,35 +235,4 @@ clearAll = do
   s <- localStorage w
   Storage.removeItem storageKeyToken s
   Storage.removeItem storageKeyRepos s
-  Storage.removeItem storageKeyHidden s
-  Storage.removeItem storageKeyTheme s
-  Storage.removeItem storageKeyIssueLabels s
-  Storage.removeItem storageKeyPRLabels s
-  Storage.removeItem storageKeyPage s
-
-loadHidden :: Effect (Set.Set String)
-loadHidden = do
-  w <- window
-  s <- localStorage w
-  raw <- Storage.getItem storageKeyHidden s
-  pure $ case raw of
-    Nothing -> Set.empty
-    Just str ->
-      case
-        jsonParser str
-          >>= (lmap printJsonDecodeError <<< decodeJson)
-        of
-        Right (arr :: Array String) ->
-          Set.fromFoldable arr
-        Left _ -> Set.empty
-
-saveHidden :: Set.Set String -> Effect Unit
-saveHidden hidden = do
-  w <- window
-  s <- localStorage w
-  let
-    arr :: Array String
-    arr = Set.toUnfoldable hidden
-  Storage.setItem storageKeyHidden
-    (stringify (encodeJson arr))
-    s
+  Storage.removeItem storageKeyView s
