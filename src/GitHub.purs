@@ -510,16 +510,23 @@ projectsListQuery =
   """
 
 -- | Detail query: items for a single project.
-projectItemsQuery :: String -> String
-projectItemsQuery nodeId =
-  "query { node(id: \"" <> nodeId <> "\") {"
-    <> " ... on ProjectV2 {"
-    <> " fields(first: 20) { nodes {"
-    <> " ... on ProjectV2SingleSelectField {"
-    <> " id name options { id name }"
-    <> " } } }"
-    <> " items(first: 100) {"
-    <> " nodes { id fieldValues(first: 10) { nodes {"
+projectItemsQuery
+  :: String -> Maybe String -> String
+projectItemsQuery nodeId mCursor =
+  let
+    afterArg = case mCursor of
+      Nothing -> ""
+      Just c -> " after: \"" <> c <> "\""
+  in
+    "query { node(id: \"" <> nodeId <> "\") {"
+      <> " ... on ProjectV2 {"
+      <> " fields(first: 20) { nodes {"
+      <> " ... on ProjectV2SingleSelectField {"
+      <> " id name options { id name }"
+      <> " } } }"
+      <> " items(first: 100" <> afterArg <> ") {"
+      <> " pageInfo { hasNextPage endCursor }"
+      <> " nodes { id fieldValues(first: 10) { nodes {"
     <> " ... on ProjectV2ItemFieldSingleSelectValue"
     <> " { name field {"
     <> " ... on ProjectV2SingleSelectField"
@@ -591,7 +598,7 @@ parseProject json = case toObject json of
           , itemCount: count
           }
 
--- | Fetch items for a single project.
+-- | Fetch items for a single project (paginated).
 fetchProjectItems
   :: String
   -> String
@@ -601,20 +608,36 @@ fetchProjectItems
            , statusField :: Maybe StatusField
            }
        )
-fetchProjectItems token projectId = do
-  result <- ghGraphQL token
-    (projectItemsQuery projectId)
-  case result of
-    Left err -> pure $ Left err
-    Right json ->
-      pure $ navigateProjectItems json
+fetchProjectItems token projectId =
+  fetchPage Nothing []
+  where
+  fetchPage mCursor acc = do
+    result <- ghGraphQL token
+      (projectItemsQuery projectId mCursor)
+    case result of
+      Left err -> pure $ Left err
+      Right json ->
+        case navigateProjectItems json of
+          Left err -> pure $ Left err
+          Right page ->
+            let all = acc <> page.items
+            in
+              if page.hasNextPage then
+                fetchPage page.endCursor all
+              else
+                pure $ Right
+                  { items: all
+                  , statusField: page.statusField
+                  }
 
--- | Navigate GraphQL response to project items.
+-- | Navigate GraphQL response to one page.
 navigateProjectItems
   :: Json
   -> Either String
        { items :: Array ProjectItem
        , statusField :: Maybe StatusField
+       , hasNextPage :: Boolean
+       , endCursor :: Maybe String
        }
 navigateProjectItems json = do
   obj <- note "Expected object"
@@ -630,12 +653,25 @@ navigateProjectItems json = do
     nodeObj .: "items"
   itemsObj <- note "Expected items object"
     (toObject itemsJson)
+  pageInfoJson <- lmap show $
+    itemsObj .: "pageInfo"
+  pageInfoObj <- note "Expected pageInfo object"
+    (toObject pageInfoJson)
+  hasNext <- lmap show $
+    pageInfoObj .: "hasNextPage"
+  let
+    endCursor_ = case
+      pageInfoObj .: "endCursor" of
+      Right c -> Just c
+      Left _ -> Nothing
   itemNodes <- lmap show $
     itemsObj .: "nodes"
   items <- traverse parseProjectItem itemNodes
   Right
     { items: catMaybes items
     , statusField: statusField_
+    , hasNextPage: hasNext
+    , endCursor: endCursor_
     }
 
 -- | Helper: convert Maybe to Either.
