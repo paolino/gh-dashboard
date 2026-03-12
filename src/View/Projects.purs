@@ -6,18 +6,19 @@ module View.Projects
 
 import Prelude
 
-import Data.Array (filter, length, null, sort)
+import Data.Array (filter, length, null, sort, nubEq)
 import Data.Function (on)
 import Data.Array as Array
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Set as Set
+import Data.String (Pattern(..), split) as Str
 import Halogen.HTML as HH
 import Halogen.HTML.Core (AttrName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Types (Project(..), ProjectItem(..))
-import View.DetailWidgets (renderLabelSelector, refreshButton)
+import View.DetailWidgets (refreshButton)
 import View.Helpers (linkButton, renderMarkdownRow)
 import View.Types (Action(..), State)
 
@@ -154,7 +155,6 @@ renderProjectDetail state projectId =
                   [ HH.text "No items loaded" ]
               Just items ->
                 let
-                  allRepos = collectRepoNames items
                   filtered =
                     if
                       Set.isEmpty
@@ -170,14 +170,7 @@ renderProjectDetail state projectId =
                       items
                 in
                   HH.div_
-                    ( ( if null allRepos then []
-                        else
-                          [ renderLabelSelector
-                              state.projectRepoFilters
-                              ToggleProjectRepoFilter
-                              allRepos
-                          ]
-                      )
+                    ( [ renderRepoFilter state items ]
                         <> map
                           ( \col ->
                               renderStatusSection
@@ -191,27 +184,181 @@ renderProjectDetail state projectId =
         ]
     ]
 
--- | Collect unique repo names with counts.
-collectRepoNames
+-- | Split "owner/repo" into { org, repo } pair.
+splitRepoName
+  :: String -> { org :: String, repo :: String }
+splitRepoName full =
+  case Str.split (Str.Pattern "/") full of
+    [ org, repo ] -> { org, repo }
+    _ -> { org: "(no org)", repo: full }
+
+-- | Build org→repos tree from items.
+groupByOrg
   :: Array ProjectItem
-  -> Array { name :: String, count :: Int }
-collectRepoNames items =
+  -> Array
+       { org :: String
+       , repos ::
+           Array { full :: String, repo :: String, count :: Int }
+       }
+groupByOrg items =
   let
-    allNames = map
+    allFull = map
       ( \(ProjectItem i) ->
           fromMaybe "(no repo)" i.repoName
       )
       items
-    unique = sort $ Set.toUnfoldable
-      $ Set.fromFoldable allNames
+    uniq = sort $ nubEq allFull
+    withCounts = map
+      ( \full ->
+          let
+            s = splitRepoName full
+          in
+            { full
+            , org: s.org
+            , repo: s.repo
+            , count: length (filter (_ == full) allFull)
+            }
+      )
+      uniq
+    orgs = sort $ nubEq $ map _.org withCounts
   in
-    Array.sortBy (flip compare `on` _.count) $ map
-      ( \n ->
-          { name: n
-          , count: length (filter (_ == n) allNames)
+    map
+      ( \org ->
+          { org
+          , repos: Array.sortBy
+              (flip compare `on` _.count)
+              ( map
+                  ( \r ->
+                      { full: r.full
+                      , repo: r.repo
+                      , count: r.count
+                      }
+                  )
+                  (filter (\r -> r.org == org) withCounts)
+              )
           }
       )
-      unique
+      orgs
+
+-- | Collapsible repo filter tree (org → repos).
+renderRepoFilter
+  :: forall w
+   . State
+  -> Array ProjectItem
+  -> HH.HTML w Action
+renderRepoFilter state items =
+  let
+    filterKey = "proj-repo-filter"
+    isOpen = Set.member filterKey state.expandedItems
+    tree = groupByOrg items
+    activeCount = Set.size state.projectRepoFilters
+  in
+    HH.div
+      [ HP.class_
+          (HH.ClassName "detail-section")
+      ]
+      [ HH.div
+          [ HP.class_
+              ( HH.ClassName
+                  "detail-heading clickable"
+              )
+          , HE.onClick \_ -> ToggleItem filterKey
+          ]
+          [ HH.text
+              ( ( if isOpen then "\x25BE "
+                  else "\x25B8 "
+                )
+                  <> "Repos"
+                  <>
+                    if activeCount > 0 then
+                      " (" <> show activeCount
+                        <> " active)"
+                    else ""
+              )
+          ]
+      , if not isOpen then HH.text ""
+        else
+          HH.div
+            [ HP.class_
+                (HH.ClassName "label-selector")
+            ]
+            (tree >>= renderOrgGroup state)
+      ]
+
+-- | A single org group with its repos.
+renderOrgGroup
+  :: forall w
+   . State
+  -> { org :: String
+     , repos ::
+         Array
+           { full :: String
+           , repo :: String
+           , count :: Int
+           }
+     }
+  -> Array (HH.HTML w Action)
+renderOrgGroup state { org, repos } =
+  let
+    orgKey = "proj-repo-org-" <> org
+    isOpen = Set.member orgKey state.expandedItems
+    orgCount = Array.foldl
+      (\acc r -> acc + r.count)
+      0
+      repos
+  in
+    [ HH.div
+        [ HP.class_
+            ( HH.ClassName
+                "detail-heading clickable"
+            )
+        , HE.onClick \_ -> ToggleItem orgKey
+        ]
+        [ HH.text
+            ( ( if isOpen then "\x25BE "
+                else "\x25B8 "
+              )
+                <> org
+                <> " ("
+                <> show orgCount
+                <> ")"
+            )
+        ]
+    ]
+      <>
+        if not isOpen then []
+        else
+          [ HH.div
+              [ HP.class_
+                  (HH.ClassName "label-selector")
+              ]
+              ( map
+                  ( \r ->
+                      HH.span
+                        [ HP.class_
+                            ( HH.ClassName
+                                ( "label-tag clickable"
+                                    <>
+                                      if
+                                        Set.member r.full
+                                          state.projectRepoFilters then " active"
+                                      else ""
+                                )
+                            )
+                        , HE.onClick \_ ->
+                            ToggleProjectRepoFilter
+                              r.full
+                        ]
+                        [ HH.text
+                            ( r.repo <> " ("
+                                <> show r.count
+                                <> ")"
+                            )
+                        ]
+                  )
+                  repos
+              )
+          ]
 
 -- | Column order for status values.
 statusOrder :: Array String
