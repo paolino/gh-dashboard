@@ -625,19 +625,7 @@ renderItemRow state projId mSf (ProjectItem item) =
                             "#" <> show n <> " "
                           Nothing -> ""
                       )
-                  , case item.url of
-                      Just url ->
-                        HH.a
-                          [ HP.href url
-                          , HP.target "_blank"
-                          , HP.class_
-                              ( HH.ClassName
-                                  "detail-link"
-                              )
-                          ]
-                          [ HH.text item.title ]
-                      Nothing ->
-                        HH.text item.title
+                  , HH.text item.title
                   ]
               , if null item.labels then
                   HH.text ""
