@@ -14,23 +14,35 @@ module GitHub
   , fetchWorkflowRuns
   , fetchWorkflowJobs
   , fetchCommitPRs
+  , fetchUserProjects
+  , fetchProjectItems
   ) where
 
 import Prelude
 
-import Data.Argonaut.Core (Json, toObject)
+import Data.Argonaut.Core
+  ( Json
+  , jsonEmptyObject
+  , stringify
+  , toObject
+  )
 import Data.Argonaut.Decode.Class
   ( class DecodeJson
   , decodeJson
   )
-import Data.Argonaut.Decode.Combinators ((.:?))
+import Data.Argonaut.Decode.Combinators ((.:), (.:?))
 import Data.Argonaut.Decode.Error (JsonDecodeError(..))
+import Data.Argonaut.Encode.Class (encodeJson)
+import Data.Argonaut.Encode.Combinators ((~>), (:=))
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (catMaybes, nubByEq)
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Int (fromString) as Int
 import Data.Maybe (Maybe(..), fromMaybe, isNothing)
+import Data.HTTP.Method (Method(..))
 import Data.String (Pattern(..), indexOf, drop, take)
+import Data.Traversable (traverse)
 import Effect.Aff (Aff, try)
 import Effect.Exception (message)
 import Fetch (fetch)
@@ -41,6 +53,8 @@ import Types
   ( CheckRun(..)
   , CommitPR
   , Issue
+  , Project(..)
+  , ProjectItem(..)
   , PullRequest
   , Repo
   , WorkflowJob
@@ -440,3 +454,274 @@ fetchCommitPRs token fullName sha = do
           { title: p.title
           , htmlUrl: p.html_url
           }
+
+-- | POST a GraphQL query to the GitHub API.
+ghGraphQL
+  :: String
+  -> String
+  -> Aff (Either String Json)
+ghGraphQL token query = do
+  result <- try do
+    let
+      body = encodeJson
+        ( "query" := query
+            ~> jsonEmptyObject
+        )
+    resp <- fetch "https://api.github.com/graphql"
+      { method: POST
+      , headers:
+          { "Accept":
+              "application/vnd.github.v3+json"
+          , "Authorization": "Bearer " <> token
+          , "Content-Type": "application/json"
+          }
+      , body: stringify body
+      }
+    resp.text
+  case result of
+    Left err -> pure $ Left (message err)
+    Right txt -> case jsonParser txt of
+      Left e ->
+        pure $ Left ("JSON parse error: " <> e)
+      Right json -> pure $ Right json
+
+-- | Light query: project list with item counts.
+projectsListQuery :: String
+projectsListQuery =
+  """
+  query {
+    viewer {
+      projectsV2(first: 20) {
+        nodes {
+          id
+          title
+          url
+          items { totalCount }
+        }
+      }
+    }
+  }
+  """
+
+-- | Detail query: items for a single project.
+projectItemsQuery :: String -> String
+projectItemsQuery nodeId =
+  "query { node(id: \"" <> nodeId <> "\") {"
+    <> " ... on ProjectV2 { items(first: 100) {"
+    <> " nodes { fieldValues(first: 10) { nodes {"
+    <> " ... on ProjectV2ItemFieldSingleSelectValue"
+    <> " { name field {"
+    <> " ... on ProjectV2SingleSelectField"
+    <> " { name } } }"
+    <> " ... on ProjectV2ItemFieldLabelValue"
+    <> " { labels(first: 10) { nodes { name } }"
+    <> " field {"
+    <> " ... on ProjectV2FieldCommon"
+    <> " { name } } }"
+    <> " } }"
+    <> " content {"
+    <> " ... on Issue { title url number body"
+    <> " repository { nameWithOwner } }"
+    <> " ... on PullRequest { title url number"
+    <> " body repository { nameWithOwner } }"
+    <> " ... on DraftIssue { title body }"
+    <> " } } } } } }"
+
+-- | Fetch the authenticated user's Projects v2
+-- | (light: no items, just metadata).
+fetchUserProjects
+  :: String
+  -> Aff (Either String (Array Project))
+fetchUserProjects token = do
+  result <- ghGraphQL token projectsListQuery
+  case result of
+    Left err -> pure $ Left err
+    Right json ->
+      pure $ navigateProjects json
+
+-- | Navigate the GraphQL response to project nodes.
+navigateProjects
+  :: Json -> Either String (Array Project)
+navigateProjects json = do
+  obj <- note "Expected object"
+    (toObject json)
+  dataJson <- lmap show $ obj .: "data"
+  dataObj <- note "Expected data object"
+    (toObject dataJson)
+  viewerJson <- lmap show $
+    dataObj .: "viewer"
+  viewerObj <- note "Expected viewer object"
+    (toObject viewerJson)
+  projsJson <- lmap show $
+    viewerObj .: "projectsV2"
+  projsObj <- note "Expected projects object"
+    (toObject projsJson)
+  nodes <- lmap show $ projsObj .: "nodes"
+  traverse parseProject nodes
+
+-- | Parse a single project node (light).
+parseProject :: Json -> Either String Project
+parseProject json = case toObject json of
+  Nothing -> Left "Expected project object"
+  Just obj -> do
+    id_ <- lmap show $ obj .: "id"
+    title_ <- lmap show $ obj .: "title"
+    url_ <- lmap show $ obj .: "url"
+    itemsJson <- lmap show $ obj .: "items"
+    case toObject itemsJson of
+      Nothing -> Left "Expected items object"
+      Just itemsObj -> do
+        count <- lmap show $
+          itemsObj .: "totalCount"
+        Right $ Project
+          { id: id_
+          , title: title_
+          , url: url_
+          , itemCount: count
+          }
+
+-- | Fetch items for a single project.
+fetchProjectItems
+  :: String
+  -> String
+  -> Aff (Either String (Array ProjectItem))
+fetchProjectItems token projectId = do
+  result <- ghGraphQL token
+    (projectItemsQuery projectId)
+  case result of
+    Left err -> pure $ Left err
+    Right json ->
+      pure $ navigateProjectItems json
+
+-- | Navigate GraphQL response to project items.
+navigateProjectItems
+  :: Json -> Either String (Array ProjectItem)
+navigateProjectItems json = do
+  obj <- note "Expected object"
+    (toObject json)
+  dataJson <- lmap show $ obj .: "data"
+  dataObj <- note "Expected data object"
+    (toObject dataJson)
+  nodeJson <- lmap show $ dataObj .: "node"
+  nodeObj <- note "Expected node object"
+    (toObject nodeJson)
+  itemsJson <- lmap show $
+    nodeObj .: "items"
+  itemsObj <- note "Expected items object"
+    (toObject itemsJson)
+  itemNodes <- lmap show $
+    itemsObj .: "nodes"
+  items <- traverse parseProjectItem itemNodes
+  Right $ catMaybes items
+
+-- | Helper: convert Maybe to Either.
+note :: forall a. String -> Maybe a -> Either String a
+note msg Nothing = Left msg
+note _ (Just a) = Right a
+
+-- | Parse a single project item node.
+parseProjectItem
+  :: Json -> Either String (Maybe ProjectItem)
+parseProjectItem json = case toObject json of
+  Nothing -> Left "Expected item object"
+  Just obj -> do
+    contentJson <- lmap show $ obj .: "content"
+    case toObject contentJson of
+      Nothing -> Right Nothing
+      Just contentObj -> do
+        title_ <- lmap show $
+          contentObj .: "title"
+        let
+          url_ = case contentObj .: "url" of
+            Right u -> Just u
+            Left _ -> Nothing
+          number_ = case
+            contentObj .: "number" of
+            Right n -> Just n
+            Left _ -> Nothing
+          body_ = case contentObj .: "body" of
+            Right b -> Just b
+            Left _ -> Nothing
+          repoName_ = case
+            contentObj .: "repository" of
+            Right repoJson ->
+              case toObject repoJson of
+                Just repoObj ->
+                  case repoObj .: "nameWithOwner" of
+                    Right n -> Just n
+                    Left _ -> Nothing
+                Nothing -> Nothing
+            Left _ -> Nothing
+          itemType_ =
+            if isNothing url_ then "DRAFT_ISSUE"
+            else "ISSUE"
+        fieldValsJson <- lmap show $
+          obj .: "fieldValues"
+        case toObject fieldValsJson of
+          Nothing -> Right Nothing
+          Just fvObj -> do
+            fvNodes :: Array Json <-
+              lmap show $ fvObj .: "nodes"
+            let
+              status_ = extractFieldValue
+                "Status"
+                fvNodes
+              labels_ = extractLabels fvNodes
+            Right $ Just $ ProjectItem
+              { title: title_
+              , status: status_
+              , itemType: itemType_
+              , url: url_
+              , repoName: repoName_
+              , labels: labels_
+              , number: number_
+              , body: body_
+              }
+
+-- | Extract a single-select field value by name.
+extractFieldValue
+  :: String -> Array Json -> Maybe String
+extractFieldValue fieldName nodes =
+  Array.head $ catMaybes $ map
+    ( \node -> case toObject node of
+        Nothing -> Nothing
+        Just obj ->
+          case obj .: "field" of
+            Right fieldJson ->
+              case toObject fieldJson of
+                Just fieldObj ->
+                  case fieldObj .: "name" of
+                    Right name
+                      | name == fieldName ->
+                          case obj .: "name" of
+                            Right v -> Just v
+                            Left _ -> Nothing
+                    _ -> Nothing
+                Nothing -> Nothing
+            Left _ -> Nothing
+    )
+    nodes
+
+-- | Extract labels from field value nodes.
+extractLabels :: Array Json -> Array String
+extractLabels nodes =
+  catMaybes $ nodes >>= \node ->
+    case toObject node of
+      Nothing -> [ Nothing ]
+      Just obj ->
+        case obj .: "labels" of
+          Right labelsJson ->
+            case toObject labelsJson of
+              Just labelsObj ->
+                case labelsObj .: "nodes" of
+                  Right
+                    ( labelNodes
+                        :: Array
+                             { name :: String
+                             }
+                    ) ->
+                    map (Just <<< _.name)
+                      labelNodes
+                  Left _ -> [ Nothing ]
+              Nothing -> [ Nothing ]
+          Left _ -> [ Nothing ]

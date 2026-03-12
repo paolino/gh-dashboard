@@ -10,6 +10,9 @@ module Types
   , CommitPR
   , Label
   , Assignee
+  , Project(..)
+  , ProjectItem(..)
+  , Page(..)
   ) where
 
 import Prelude
@@ -244,6 +247,31 @@ instance DecodeJson WorkflowJob where
         , conclusion: conclusion_
         , htmlUrl: htmlUrl_
         }
+
+-- | Which top-level page is active.
+data Page = ReposPage | ProjectsPage
+
+derive instance eqPage :: Eq Page
+
+-- | A GitHub Projects v2 board.
+newtype Project = Project
+  { id :: String
+  , title :: String
+  , url :: String
+  , itemCount :: Int
+  }
+
+-- | An item on a project board.
+newtype ProjectItem = ProjectItem
+  { title :: String
+  , status :: Maybe String
+  , itemType :: String
+  , url :: Maybe String
+  , repoName :: Maybe String
+  , labels :: Array String
+  , number :: Maybe Int
+  , body :: Maybe String
+  }
 
 -- | Cached detail for an expanded repo.
 type RepoDetail =
