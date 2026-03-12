@@ -163,6 +163,10 @@
     .empty-msg { color: var(--text-dim); font-size: 13px; font-style: italic; }
     @keyframes pulse { 50% { opacity: 0.6; } }
     .loading { animation: pulse 1.5s ease-in-out infinite; }
+    .tab-bar { display: flex; gap: 0; }
+    .tab-btn { padding: 6px 14px; border: 1px solid var(--bg-elevated); border-radius: 6px 6px 0 0; background: var(--bg-elevated); color: var(--text-muted); font-size: 13px; cursor: pointer; border-bottom: none; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { background: var(--bg); color: var(--text); border-color: var(--border); border-bottom: 1px solid var(--bg); }
     @media (max-width: 640px) {
       body { padding: 12px 8px; }
       .form-container { margin-top: 40px; }

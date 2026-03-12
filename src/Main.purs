@@ -18,9 +18,11 @@ import GitHub
   , fetchCommitPRs
   , fetchCommitStatuses
   , fetchIssue
+  , fetchProjectItems
   , fetchRepo
   , fetchRepoIssues
   , fetchRepoPRs
+  , fetchUserProjects
   , fetchWorkflowJobs
   , fetchWorkflowRuns
   )
@@ -55,6 +57,7 @@ import Storage
   )
 import Types
   ( Issue(..)
+  , Page(..)
   , PullRequest(..)
   , Repo(..)
   , WorkflowJob(..)
@@ -106,6 +109,12 @@ initialState =
   , issueLabelFilters: Set.empty
   , prLabelFilters: Set.empty
   , workflowStatusFilters: Set.empty
+  , currentPage: ReposPage
+  , projects: []
+  , projectsLoading: false
+  , expandedProject: Nothing
+  , projectItems: Map.empty
+  , projectItemsLoading: false
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -659,7 +668,69 @@ handleAction = case _ of
         , error = Nothing
         , loading = false
         , darkTheme = true
+        , projects = []
+        , currentPage = ReposPage
+        , expandedProject = Nothing
+        , projectItems = Map.empty
         }
+  SwitchPage page -> do
+    H.modify_ _ { currentPage = page }
+    when (page == ProjectsPage) do
+      st <- H.get
+      when (null st.projects) do
+        handleAction RefreshProjects
+  RefreshProjects -> do
+    st <- H.get
+    H.modify_ _ { projectsLoading = true }
+    result <- H.liftAff
+      (fetchUserProjects st.token)
+    case result of
+      Left err ->
+        H.modify_ _
+          { error = Just err
+          , projectsLoading = false
+          }
+      Right projs ->
+        H.modify_ _
+          { projects = projs
+          , projectsLoading = false
+          , error = Nothing
+          }
+  ExpandProject projectId -> do
+    st <- H.get
+    if st.expandedProject == Just projectId then
+      H.modify_ _
+        { expandedProject = Nothing }
+    else do
+      H.modify_ _
+        { expandedProject = Just projectId
+        , expandedItems = Set.empty
+        }
+      when
+        (not (Map.member projectId st.projectItems))
+        do
+          handleAction
+            (RefreshProjectItems projectId)
+  RefreshProjectItems projectId -> do
+    st <- H.get
+    H.modify_ _ { projectItemsLoading = true }
+    result <- H.liftAff
+      (fetchProjectItems st.token projectId)
+    case result of
+      Left err ->
+        H.modify_ _
+          { error = Just err
+          , projectItemsLoading = false
+          }
+      Right items ->
+        H.modify_ _
+          { projectItems = Map.insert
+              projectId
+              items
+              st.projectItems
+          , projectItemsLoading = false
+          , error = Nothing
+          }
 
 -- | Extract unique SHAs from runs, preserving order.
 extractShas :: Array WorkflowRun -> Array String

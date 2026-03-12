@@ -13,7 +13,8 @@ import GitHub (RateLimit)
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
-import Types (Repo)
+import Types (Page(..), Repo)
+import View.Projects (renderProjects)
 import View.RepoTable (renderRepoTable)
 import View.Types (Action(..), State)
 
@@ -116,12 +117,20 @@ renderDashboard state repos =
             [ HP.class_ (HH.ClassName "error") ]
             [ HH.text err ]
         Nothing -> HH.text ""
-    , if null repos then
-        HH.p
-          [ HP.class_ (HH.ClassName "muted") ]
-          [ HH.text "No repositories found." ]
-      else
-        renderRepoTable state repos
+    , case state.currentPage of
+        ReposPage ->
+          if null repos then
+            HH.p
+              [ HP.class_
+                  (HH.ClassName "muted")
+              ]
+              [ HH.text
+                  "No repositories found."
+              ]
+          else
+            renderRepoTable state repos
+        ProjectsPage ->
+          renderProjects state
     ]
 
 -- | Toolbar with filter and controls.
@@ -130,7 +139,38 @@ renderToolbar
 renderToolbar state =
   HH.div
     [ HP.class_ (HH.ClassName "toolbar") ]
-    [ HH.button
+    [ HH.div
+        [ HP.class_ (HH.ClassName "tab-bar") ]
+        [ HH.button
+            [ HE.onClick \_ ->
+                SwitchPage ReposPage
+            , HP.class_
+                ( HH.ClassName
+                    ( "tab-btn"
+                        <> activeIf
+                          ( state.currentPage
+                              == ReposPage
+                          )
+                    )
+                )
+            ]
+            [ HH.text "Repos" ]
+        , HH.button
+            [ HE.onClick \_ ->
+                SwitchPage ProjectsPage
+            , HP.class_
+                ( HH.ClassName
+                    ( "tab-btn"
+                        <> activeIf
+                          ( state.currentPage
+                              == ProjectsPage
+                          )
+                    )
+                )
+            ]
+            [ HH.text "Projects" ]
+        ]
+    , HH.button
         [ HE.onClick \_ -> ToggleAddRepo
         , HP.class_
             ( HH.ClassName

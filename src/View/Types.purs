@@ -7,7 +7,14 @@ module View.Types
 import Data.Maybe (Maybe)
 import Data.Set (Set)
 import GitHub (RateLimit)
-import Types (Repo, RepoDetail)
+import Data.Map (Map)
+import Types
+  ( Page
+  , Project
+  , ProjectItem
+  , Repo
+  , RepoDetail
+  )
 
 -- | Actions emitted by the view.
 data Action
@@ -40,6 +47,10 @@ data Action
   | ExportStorage
   | ImportStorage
   | ResetAll
+  | SwitchPage Page
+  | RefreshProjects
+  | ExpandProject String
+  | RefreshProjectItems String
 
 -- | Application state (referenced by view).
 type State =
@@ -66,4 +77,10 @@ type State =
   , issueLabelFilters :: Set String
   , prLabelFilters :: Set String
   , workflowStatusFilters :: Set String
+  , currentPage :: Page
+  , projects :: Array Project
+  , projectsLoading :: Boolean
+  , expandedProject :: Maybe String
+  , projectItems :: Map String (Array ProjectItem)
+  , projectItemsLoading :: Boolean
   }
