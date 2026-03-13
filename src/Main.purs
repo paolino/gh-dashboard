@@ -135,6 +135,7 @@ initialState =
   , editingProject: Nothing
   , editProjectTitle: ""
   , agentServer: ""
+  , launchedItems: Set.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -1052,14 +1053,18 @@ handleAction = case _ of
             , info = Nothing
             }
         Right _ -> do
-          H.modify_ _
+          let
+            itemKey = fullName <> "#"
+              <> show issueNum
+          H.modify_ \s -> s
             { error = Nothing
             , info = Just
                 ( "Agent launched for "
-                    <> fullName
-                    <> "#"
-                    <> show issueNum
+                    <> itemKey
                 )
+            , launchedItems =
+                Set.insert itemKey
+                  s.launchedItems
             }
           liftEffect do
             w <- window

@@ -107,4 +107,5 @@ type State =
   , editingProject :: Maybe String
   , editProjectTitle :: String
   , agentServer :: String
+  , launchedItems :: Set String
   }
