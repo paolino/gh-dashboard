@@ -76,7 +76,7 @@ import Types
   )
 import View (Action(..), State, renderDashboard, renderTokenForm)
 import Web.HTML (window)
-import Web.HTML.Window (confirm)
+import Web.HTML.Window (confirm, open)
 
 main :: Effect Unit
 main = HA.runHalogenAff do
@@ -1051,7 +1051,7 @@ handleAction = case _ of
             { error = Just (message err)
             , info = Nothing
             }
-        Right _ ->
+        Right _ -> do
           H.modify_ _
             { error = Nothing
             , info = Just
@@ -1061,6 +1061,14 @@ handleAction = case _ of
                     <> show issueNum
                 )
             }
+          liftEffect do
+            w <- window
+            _ <- open
+              (server <> "/")
+              "_blank"
+              ""
+              w
+            pure unit
   SetAgentServer url -> do
     H.modify_ _ { agentServer = url }
     liftEffect $ saveAgentServer url
