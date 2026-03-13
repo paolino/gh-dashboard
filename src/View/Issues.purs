@@ -201,6 +201,7 @@ renderIssueRow state isHidden (Issue i) =
             , linkButton i.htmlUrl
             , copyButton i.title
             , launchButton
+                state.launchedItems
                 (fromMaybe "" state.expanded)
                 i.number
             ]

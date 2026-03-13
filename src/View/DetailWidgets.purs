@@ -61,17 +61,30 @@ hideButton url isHidden =
 
 -- | Launch agent button for an issue.
 launchButton
-  :: forall w. String -> Int -> HH.HTML w Action
-launchButton repoName issueNum =
-  HH.button
-    [ HE.onClick \_ ->
-        LaunchAgent repoName issueNum
-    , HP.class_ (HH.ClassName "btn-hide")
-    , HP.title "Launch agent"
-    , HP.attr (AttrName "onclick")
-        "event.stopPropagation()"
-    ]
-    [ HH.text "\x25B6" ]
+  :: forall w
+   . Set.Set String
+  -> String
+  -> Int
+  -> HH.HTML w Action
+launchButton launched repoName issueNum =
+  let
+    key = repoName <> "#" <> show issueNum
+    wasLaunched = Set.member key launched
+  in
+    HH.button
+      [ HE.onClick \_ ->
+          LaunchAgent repoName issueNum
+      , HP.class_ (HH.ClassName "btn-hide")
+      , HP.title
+          ( if wasLaunched then "Agent running"
+            else "Launch agent"
+          )
+      , HP.attr (AttrName "onclick")
+          "event.stopPropagation()"
+      ]
+      [ HH.text
+          (if wasLaunched then "\x2713" else "\x25B6")
+      ]
 
 -- | Collect unique label names with counts from items.
 collectLabels

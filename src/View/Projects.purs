@@ -548,7 +548,10 @@ renderItemRow state projId mSf (ProjectItem item) =
                           repo
                           n
                       )
-                  , launchButton repo n
+                  , launchButton
+                      state.launchedItems
+                      repo
+                      n
                   ]
                 _, _ -> []
                 <>
