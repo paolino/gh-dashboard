@@ -427,7 +427,8 @@ renderOrgGroup state { org, repos } =
 -- | Column order for status values.
 statusOrder :: Array String
 statusOrder =
-  [ "Todo"
+  [ "Backlog"
+  , "Todo"
   , "In Progress"
   , "Done"
   , "Stale"
