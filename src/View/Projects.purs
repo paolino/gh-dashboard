@@ -539,10 +539,20 @@ renderItemRow state projId mSf (ProjectItem item) =
     curStatus = fromMaybe "(no status)" item.status
     isDraft = item.itemType == "DRAFT_ISSUE"
     isEditing = state.editingItem == Just item.itemId
+    hasTerminal =
+      case item.repoName, item.number of
+        Just repo, Just n ->
+          Set.member (repo <> "#" <> show n)
+            state.launchedItems
+        _, _ -> false
+    rowClass = "repo-row"
+      <>
+        if hasTerminal then " terminal-active"
+        else ""
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
-        , HP.class_ (HH.ClassName "repo-row")
+        , HP.class_ (HH.ClassName rowClass)
         ]
         [ HH.td_
             ( case item.repoName, item.number of

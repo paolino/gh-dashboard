@@ -191,10 +191,19 @@ renderIssueRow state isHidden (Issue i) =
     prefix = if isHidden then "h-issue-" else "issue-"
     key = prefix <> show i.number
     isOpen = Set.member key state.expandedItems
+    launchKey =
+      (fromMaybe "" state.expanded) <> "#"
+        <> show i.number
+    hasTerminal = Set.member launchKey
+      state.launchedItems
+    rowClass = "repo-row"
+      <>
+        if hasTerminal then " terminal-active"
+        else ""
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
-        , HP.class_ (HH.ClassName "repo-row")
+        , HP.class_ (HH.ClassName rowClass)
         ]
         [ HH.td_
             ( [ refreshButton
