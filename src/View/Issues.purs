@@ -197,16 +197,17 @@ renderIssueRow state isHidden (Issue i) =
         , HP.class_ (HH.ClassName "repo-row")
         ]
         [ HH.td_
-            [ refreshButton
-                (RefreshIssue i.number)
-            , hideButton i.htmlUrl isHidden
-            , linkButton i.htmlUrl
-            , copyButton i.title
-            , launchButton
-                state.launchedItems
-                (fromMaybe "" state.expanded)
-                i.number
-            ]
+            ( [ refreshButton
+                  (RefreshIssue i.number)
+              , hideButton i.htmlUrl isHidden
+              , linkButton i.htmlUrl
+              , copyButton i.title
+              ]
+                <> launchButton
+                  state.launchedItems
+                  (fromMaybe "" state.expanded)
+                  i.number
+            )
         , HH.td_
             [ HH.span_
                 [ HH.text

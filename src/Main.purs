@@ -49,7 +49,7 @@ import Halogen as H
 import Halogen.Aff as HA
 import Halogen.VDom.Driver (runUI)
 import FFI.Clipboard (copyToClipboard)
-import FFI.Terminal (attachTerminal)
+import FFI.Terminal (attachTerminal, destroyTerminal)
 import FFI.Dialog (confirmDialog)
 import FFI.Storage as FFIStorage
 import FFI.Theme (setBodyTheme)
@@ -1103,6 +1103,60 @@ handleAction = case _ of
               <> "/terminal"
           liftEffect
             $ attachTerminal elemId wsUrl
+  DetachAgent fullName issueNum -> do
+    let
+      itemKey = fullName <> "#"
+        <> show issueNum
+      elemId = termElementId itemKey
+    liftEffect $ destroyTerminal elemId
+    H.modify_ \s -> s
+      { launchedItems =
+          Set.delete itemKey s.launchedItems
+      , info = Nothing
+      }
+  StopAgent fullName issueNum -> do
+    confirmed <- liftEffect $
+      confirmDialog "Stop this agent session?"
+    when confirmed do
+      st <- H.get
+      let
+        parts = split (Pattern "/") fullName
+        name = case index parts 1 of
+          Just n -> n
+          Nothing -> ""
+        server = st.agentServer
+        itemKey = fullName <> "#"
+          <> show issueNum
+        elemId = termElementId itemKey
+        sid = name <> "-" <> show issueNum
+      liftEffect $ destroyTerminal elemId
+      H.modify_ \s -> s
+        { launchedItems =
+            Set.delete itemKey s.launchedItems
+        , info = Nothing
+        }
+      when (server /= "") do
+        result <- H.liftAff $ try do
+          resp <- fetch
+            ( server <> "/sessions/"
+                <> sid
+            )
+            { method: DELETE
+            , headers:
+                { "Content-Type":
+                    "application/json"
+                }
+            }
+          resp.text
+        case result of
+          Left err ->
+            H.modify_ _
+              { error = Just (message err) }
+          Right _ ->
+            H.modify_ _
+              { info = Just
+                  ("Agent stopped: " <> sid)
+              }
   SetAgentServer url -> do
     H.modify_ _ { agentServer = url }
     liftEffect $ saveAgentServer url

@@ -65,6 +65,8 @@ data Action
   | SetRenameProjectTitle String
   | SubmitRenameProject String String
   | LaunchAgent String Int
+  | DetachAgent String Int
+  | StopAgent String Int
   | SetAgentServer String
 
 -- | Application state (referenced by view).

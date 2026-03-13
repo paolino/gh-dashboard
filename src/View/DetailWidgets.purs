@@ -59,31 +59,48 @@ hideButton url isHidden =
         (if isHidden then "\x25C9" else "\x25CC")
     ]
 
--- | Launch agent button for an issue.
+-- | Launch/detach/stop buttons for an issue agent.
 launchButton
   :: forall w
    . Set.Set String
   -> String
   -> Int
-  -> HH.HTML w Action
+  -> Array (HH.HTML w Action)
 launchButton launched repoName issueNum =
   let
     key = repoName <> "#" <> show issueNum
-    wasLaunched = Set.member key launched
+    isActive = Set.member key launched
   in
-    HH.button
-      [ HE.onClick \_ ->
-          LaunchAgent repoName issueNum
-      , HP.class_ (HH.ClassName "btn-hide")
-      , HP.title
-          ( if wasLaunched then "Agent running"
-            else "Launch agent"
-          )
-      , HP.attr (AttrName "onclick")
-          "event.stopPropagation()"
+    if isActive then
+      [ HH.button
+          [ HE.onClick \_ ->
+              DetachAgent repoName issueNum
+          , HP.class_ (HH.ClassName "btn-hide")
+          , HP.title "Detach terminal"
+          , HP.attr (AttrName "onclick")
+              "event.stopPropagation()"
+          ]
+          [ HH.text "\x23CF" ]
+      , HH.button
+          [ HE.onClick \_ ->
+              StopAgent repoName issueNum
+          , HP.class_ (HH.ClassName "btn-hide")
+          , HP.title "Stop agent"
+          , HP.attr (AttrName "onclick")
+              "event.stopPropagation()"
+          ]
+          [ HH.text "\x23F9" ]
       ]
-      [ HH.text
-          (if wasLaunched then "\x2713" else "\x25B6")
+    else
+      [ HH.button
+          [ HE.onClick \_ ->
+              LaunchAgent repoName issueNum
+          , HP.class_ (HH.ClassName "btn-hide")
+          , HP.title "Launch agent"
+          , HP.attr (AttrName "onclick")
+              "event.stopPropagation()"
+          ]
+          [ HH.text "\x25B6" ]
       ]
 
 -- | Collect unique label names with counts from items.

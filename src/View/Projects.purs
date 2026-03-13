@@ -553,11 +553,11 @@ renderItemRow state projId mSf (ProjectItem item) =
                           repo
                           n
                       )
-                  , launchButton
+                  ]
+                    <> launchButton
                       state.launchedItems
                       repo
                       n
-                  ]
                 _, _ -> []
                 <>
                   case item.url of
