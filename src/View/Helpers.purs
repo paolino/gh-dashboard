@@ -1,6 +1,8 @@
 -- | Shared rendering helpers used across view sub-modules.
 module View.Helpers
   ( renderMarkdownRow
+  , renderTerminalRow
+  , termElementId
   , linkButton
   , detailHead
   , renderAssignees
@@ -15,13 +17,48 @@ import Prelude
 
 import Data.Array (intersperse, null)
 import Data.Maybe (Maybe(..))
-import Data.String (drop, take)
+import Data.String
+  ( Pattern(..)
+  , Replacement(..)
+  , drop
+  , replaceAll
+  , take
+  )
 import Halogen.HTML as HH
 import Halogen.HTML.Core (AttrName(..), PropName(..))
 import Halogen.HTML.Properties as HP
 import Types (Assignee, Label)
 
 foreign import parseMarkdownImpl :: String -> String
+
+-- | Convert a launch key to a DOM element ID.
+termElementId :: String -> String
+termElementId key =
+  "term-"
+    <> replaceAll (Pattern "/") (Replacement "-")
+      ( replaceAll (Pattern "#") (Replacement "-")
+          key
+      )
+
+-- | Row with a terminal container div.
+renderTerminalRow
+  :: forall w i. String -> Array (HH.HTML w i)
+renderTerminalRow elemId =
+  [ HH.tr
+      [ HP.class_ (HH.ClassName "detail-row") ]
+      [ HH.td
+          [ HP.colSpan 6 ]
+          [ HH.div
+              [ HP.class_
+                  ( HH.ClassName
+                      "terminal-container"
+                  )
+              , HP.id elemId
+              ]
+              []
+          ]
+      ]
+  ]
 
 -- | Row with markdown-rendered body.
 renderMarkdownRow

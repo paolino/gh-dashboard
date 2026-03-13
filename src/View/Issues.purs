@@ -28,6 +28,8 @@ import View.Helpers
   , renderAuthor
   , renderLabels
   , renderMarkdownRow
+  , renderTerminalRow
+  , termElementId
   )
 import View.Types (Action(..), State)
 
@@ -232,5 +234,15 @@ renderIssueRow state isHidden (Issue i) =
     ]
       <>
         if isOpen then
-          renderMarkdownRow i.body
+          let
+            launchKey =
+              (fromMaybe "" state.expanded) <> "#"
+                <> show i.number
+          in
+            if
+              Set.member launchKey
+                state.launchedItems then
+              renderTerminalRow
+                (termElementId launchKey)
+            else renderMarkdownRow i.body
         else []

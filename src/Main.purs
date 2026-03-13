@@ -12,7 +12,14 @@ import Data.HTTP.Method (Method(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set as Set
-import Data.String (Pattern(..), split)
+import Data.String
+  ( Pattern(..)
+  , Replacement(..)
+  , indexOf
+  , replace
+  , replaceAll
+  , split
+  )
 import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -42,6 +49,7 @@ import Halogen as H
 import Halogen.Aff as HA
 import Halogen.VDom.Driver (runUI)
 import FFI.Clipboard (copyToClipboard)
+import FFI.Terminal (attachTerminal)
 import FFI.Dialog (confirmDialog)
 import FFI.Storage as FFIStorage
 import FFI.Theme (setBodyTheme)
@@ -76,7 +84,7 @@ import Types
   )
 import View (Action(..), State, renderDashboard, renderTokenForm)
 import Web.HTML (window)
-import Web.HTML.Window (confirm, open)
+import Web.HTML.Window (confirm)
 
 main :: Effect Unit
 main = HA.runHalogenAff do
@@ -1019,6 +1027,9 @@ handleAction = case _ of
         Just n -> n
         Nothing -> ""
       server = st.agentServer
+      itemKey = fullName <> "#"
+        <> show issueNum
+      elemId = termElementId itemKey
     if server == "" then
       H.modify_ _
         { error = Just
@@ -1053,8 +1064,10 @@ handleAction = case _ of
             , info = Nothing
             }
         Right _ -> do
+          -- Expand the item so the terminal
+          -- div appears in the DOM
           let
-            itemKey = fullName <> "#"
+            issueKey = "issue-"
               <> show issueNum
           H.modify_ \s -> s
             { error = Nothing
@@ -1065,18 +1078,41 @@ handleAction = case _ of
             , launchedItems =
                 Set.insert itemKey
                   s.launchedItems
+            , expandedItems =
+                Set.insert issueKey
+                  s.expandedItems
             }
-          liftEffect do
-            w <- window
-            _ <- open
-              (server <> "/")
-              "_blank"
-              ""
-              w
-            pure unit
+          let
+            wsProto =
+              if indexOf (Pattern "https")
+                server == Just 0
+              then "wss"
+              else "ws"
+            host =
+              replace (Pattern "https://")
+                (Replacement "")
+                $ replace
+                    (Pattern "http://")
+                    (Replacement "")
+                    server
+            wsUrl = wsProto <> "://" <> host
+              <> "/sessions/"
+              <> name
+              <> "-"
+              <> show issueNum
+              <> "/terminal"
+          liftEffect
+            $ attachTerminal elemId wsUrl
   SetAgentServer url -> do
     H.modify_ _ { agentServer = url }
     liftEffect $ saveAgentServer url
+
+-- | Convert a launch key to a DOM element ID.
+termElementId :: String -> String
+termElementId key =
+  "term-"
+    <> replaceAll (Pattern "/") (Replacement "-")
+      (replaceAll (Pattern "#") (Replacement "-") key)
 
 -- | Extract unique SHAs from runs, preserving order.
 extractShas :: Array WorkflowRun -> Array String

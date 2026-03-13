@@ -23,7 +23,12 @@ import View.DetailWidgets
   , launchButton
   , refreshButton
   )
-import View.Helpers (linkButton, renderMarkdownRow)
+import View.Helpers
+  ( linkButton
+  , renderMarkdownRow
+  , renderTerminalRow
+  , termElementId
+  )
 import View.Types (Action(..), State)
 
 -- | Render all projects as an expandable table.
@@ -714,5 +719,17 @@ renderItemRow state projId mSf (ProjectItem item) =
     ]
       <>
         if isOpen then
-          renderMarkdownRow item.body
+          case item.repoName, item.number of
+            Just repo, Just n ->
+              let
+                launchKey = repo <> "#"
+                  <> show n
+              in
+                if
+                  Set.member launchKey
+                    state.launchedItems then
+                  renderTerminalRow
+                    (termElementId launchKey)
+                else renderMarkdownRow item.body
+            _, _ -> renderMarkdownRow item.body
         else []
