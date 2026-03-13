@@ -8,6 +8,8 @@ module Storage
   , loadViewState
   , saveViewState
   , defaultViewState
+  , loadAgentServer
+  , saveAgentServer
   , clearAll
   ) where
 
@@ -228,6 +230,21 @@ loadViewState = do
                     Right j -> decodeSet j
                     _ -> Set.empty
               }
+
+storageKeyAgentServer :: String
+storageKeyAgentServer = "gh-dashboard-agent-server"
+
+loadAgentServer :: Effect String
+loadAgentServer = do
+  w <- window
+  s <- localStorage w
+  fromMaybe "" <$> Storage.getItem storageKeyAgentServer s
+
+saveAgentServer :: String -> Effect Unit
+saveAgentServer url = do
+  w <- window
+  s <- localStorage w
+  Storage.setItem storageKeyAgentServer url s
 
 clearAll :: Effect Unit
 clearAll = do

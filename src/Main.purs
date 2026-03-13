@@ -2,17 +2,24 @@ module Main where
 
 import Prelude
 
+import Data.Argonaut.Core (jsonEmptyObject, stringify)
+import Data.Argonaut.Encode.Class (encodeJson)
+import Data.Argonaut.Encode.Combinators ((:=), (~>))
 import Data.Array (filter, index, length, nubByEq, null)
 import Data.Array as Array
-import Data.Traversable (traverse_)
 import Data.Either (Either(..))
+import Data.HTTP.Method (Method(..))
 import Data.Map as Map
-import Data.Tuple (Tuple(..))
 import Data.Maybe (Maybe(..))
 import Data.Set as Set
+import Data.String (Pattern(..), split)
+import Data.Traversable (traverse_)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, try)
 import Effect.Class (liftEffect)
+import Effect.Exception (message)
+import Fetch (fetch)
 import GitHub
   ( fetchCheckRuns
   , fetchCommitPRs
@@ -48,9 +55,11 @@ import RepoUtils
   )
 import Storage
   ( clearAll
+  , loadAgentServer
   , loadRepoList
   , loadToken
   , loadViewState
+  , saveAgentServer
   , saveRepoList
   , saveToken
   , saveViewState
@@ -124,6 +133,7 @@ initialState =
   , editItemTitle: ""
   , editingProject: Nothing
   , editProjectTitle: ""
+  , agentServer: ""
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -163,10 +173,12 @@ handleAction = case _ of
   Initialize -> do
     saved <- liftEffect loadToken
     repoList <- liftEffect loadRepoList
+    agentUrl <- liftEffect loadAgentServer
     vs <- liftEffect loadViewState
     liftEffect $ setBodyTheme vs.darkTheme
     H.modify_ _
       { repoList = repoList
+      , agentServer = agentUrl
       , hiddenItems = vs.hiddenItems
       , darkTheme = vs.darkTheme
       , issueLabelFilters = vs.issueLabelFilters
@@ -993,6 +1005,58 @@ handleAction = case _ of
                 H.modify_ _
                   { error = Just err }
               Right _ -> pure unit
+  LaunchAgent issueNum -> do
+    st <- H.get
+    case st.expanded of
+      Nothing ->
+        H.modify_ _
+          { error = Just "No repo expanded" }
+      Just fullName -> do
+        let
+          parts = split (Pattern "/") fullName
+          owner = case index parts 0 of
+            Just o -> o
+            Nothing -> ""
+          name = case index parts 1 of
+            Just n -> n
+            Nothing -> ""
+          server = st.agentServer
+        if server == "" then
+          H.modify_ _
+            { error = Just
+                "Set agent server URL first"
+            }
+        else do
+          let
+            body = encodeJson
+              ( "repo"
+                  := ( "owner" := owner
+                        ~> "name" := name
+                        ~> jsonEmptyObject
+                     )
+                  ~> "issue" := issueNum
+                  ~> jsonEmptyObject
+              )
+          result <- H.liftAff $ try do
+            resp <- fetch
+              (server <> "/sessions")
+              { method: POST
+              , headers:
+                  { "Content-Type":
+                      "application/json"
+                  }
+              , body: stringify body
+              }
+            resp.text
+          case result of
+            Left err ->
+              H.modify_ _
+                { error = Just (message err) }
+            Right _ ->
+              H.modify_ _ { error = Nothing }
+  SetAgentServer url -> do
+    H.modify_ _ { agentServer = url }
+    liftEffect $ saveAgentServer url
 
 -- | Extract unique SHAs from runs, preserving order.
 extractShas :: Array WorkflowRun -> Array String

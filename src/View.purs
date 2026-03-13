@@ -193,6 +193,14 @@ renderToolbar state =
             (HH.ClassName "toolbar-spacer")
         ]
         []
+    , HH.input
+        [ HP.placeholder "Agent server"
+        , HP.value state.agentServer
+        , HE.onValueInput SetAgentServer
+        , HP.class_
+            (HH.ClassName "filter-input agent-input")
+        , HP.title "Agent daemon URL"
+        ]
     , HH.span
         [ HE.onClick \_ -> ToggleTheme
         , HP.class_

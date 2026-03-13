@@ -15,6 +15,7 @@ import View.DetailWidgets
   ( collectLabels
   , copyButton
   , hideButton
+  , launchButton
   , refreshButton
   , renderLabelSelector
   )
@@ -198,6 +199,7 @@ renderIssueRow state isHidden (Issue i) =
             , hideButton i.htmlUrl isHidden
             , linkButton i.htmlUrl
             , copyButton i.title
+            , launchButton i.number
             ]
         , HH.td_
             [ HH.span_

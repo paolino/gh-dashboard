@@ -64,6 +64,8 @@ data Action
   | StartRenameProject String String
   | SetRenameProjectTitle String
   | SubmitRenameProject String String
+  | LaunchAgent Int
+  | SetAgentServer String
 
 -- | Application state (referenced by view).
 type State =
@@ -103,4 +105,5 @@ type State =
   , editItemTitle :: String
   , editingProject :: Maybe String
   , editProjectTitle :: String
+  , agentServer :: String
   }

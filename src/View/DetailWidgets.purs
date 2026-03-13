@@ -3,6 +3,7 @@ module View.DetailWidgets
   ( refreshButton
   , copyButton
   , hideButton
+  , launchButton
   , collectLabels
   , renderLabelSelector
   ) where
@@ -57,6 +58,19 @@ hideButton url isHidden =
     [ HH.text
         (if isHidden then "\x25C9" else "\x25CC")
     ]
+
+-- | Launch agent button for an issue.
+launchButton
+  :: forall w. Int -> HH.HTML w Action
+launchButton issueNum =
+  HH.button
+    [ HE.onClick \_ -> LaunchAgent issueNum
+    , HP.class_ (HH.ClassName "btn-hide")
+    , HP.title "Launch agent"
+    , HP.attr (AttrName "onclick")
+        "event.stopPropagation()"
+    ]
+    [ HH.text "\x25B6" ]
 
 -- | Collect unique label names with counts from items.
 collectLabels
