@@ -117,12 +117,6 @@ renderDashboard state repos =
             [ HP.class_ (HH.ClassName "error") ]
             [ HH.text err ]
         Nothing -> HH.text ""
-    , case state.info of
-        Just msg ->
-          HH.div
-            [ HP.class_ (HH.ClassName "info") ]
-            [ HH.text msg ]
-        Nothing -> HH.text ""
     , case state.currentPage of
         ReposPage ->
           if null repos then

@@ -1082,9 +1082,7 @@ handleAction = case _ of
       case result of
         Left err ->
           H.modify_ _
-            { error = Just (message err)
-            , info = Nothing
-            }
+            { error = Just (message err) }
         Right _ -> do
           let
             wsProto =
@@ -1109,10 +1107,6 @@ handleAction = case _ of
           -- div appears in the DOM
           H.modify_ \s -> s
             { error = Nothing
-            , info = Just
-                ( "Agent launched for "
-                    <> itemKey
-                )
             , launchedItems =
                 Set.insert itemKey
                   s.launchedItems
@@ -1142,7 +1136,6 @@ handleAction = case _ of
           Set.delete itemKey s.launchedItems
       , terminalUrls =
           Map.delete itemKey s.terminalUrls
-      , info = Nothing
       }
   StopAgent fullName issueNum -> do
     confirmed <- liftEffect $
@@ -1165,7 +1158,6 @@ handleAction = case _ of
             Set.delete itemKey s.launchedItems
         , terminalUrls =
             Map.delete itemKey s.terminalUrls
-        , info = Nothing
         }
       when (server /= "") do
         result <- H.liftAff $ try do
@@ -1184,11 +1176,7 @@ handleAction = case _ of
           Left err ->
             H.modify_ _
               { error = Just (message err) }
-          Right _ ->
-            H.modify_ _
-              { info = Just
-                  ("Agent stopped: " <> sid)
-              }
+          Right _ -> pure unit
   SetAgentServer url -> do
     H.modify_ _ { agentServer = url }
     liftEffect $ saveAgentServer url
