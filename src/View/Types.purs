@@ -76,6 +76,7 @@ type State =
   , detailLoading :: Boolean
   , loading :: Boolean
   , error :: Maybe String
+  , info :: Maybe String
   , rateLimit :: Maybe RateLimit
   , filterText :: String
   , hasToken :: Boolean

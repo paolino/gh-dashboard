@@ -104,6 +104,7 @@ initialState =
   , detailLoading: false
   , loading: false
   , error: Nothing
+  , info: Nothing
   , rateLimit: Nothing
   , filterText: ""
   , hasToken: false
@@ -725,6 +726,7 @@ handleAction = case _ of
         , expanded = Nothing
         , details = Nothing
         , error = Nothing
+        , info = Nothing
         , loading = false
         , darkTheme = true
         , projects = []
@@ -1046,9 +1048,19 @@ handleAction = case _ of
       case result of
         Left err ->
           H.modify_ _
-            { error = Just (message err) }
+            { error = Just (message err)
+            , info = Nothing
+            }
         Right _ ->
-          H.modify_ _ { error = Nothing }
+          H.modify_ _
+            { error = Nothing
+            , info = Just
+                ( "Agent launched for "
+                    <> fullName
+                    <> "#"
+                    <> show issueNum
+                )
+            }
   SetAgentServer url -> do
     H.modify_ _ { agentServer = url }
     liftEffect $ saveAgentServer url
