@@ -1005,55 +1005,50 @@ handleAction = case _ of
                 H.modify_ _
                   { error = Just err }
               Right _ -> pure unit
-  LaunchAgent issueNum -> do
+  LaunchAgent fullName issueNum -> do
     st <- H.get
-    case st.expanded of
-      Nothing ->
-        H.modify_ _
-          { error = Just "No repo expanded" }
-      Just fullName -> do
-        let
-          parts = split (Pattern "/") fullName
-          owner = case index parts 0 of
-            Just o -> o
-            Nothing -> ""
-          name = case index parts 1 of
-            Just n -> n
-            Nothing -> ""
-          server = st.agentServer
-        if server == "" then
-          H.modify_ _
-            { error = Just
-                "Set agent server URL first"
-            }
-        else do
-          let
-            body = encodeJson
-              ( "repo"
-                  := ( "owner" := owner
-                        ~> "name" := name
-                        ~> jsonEmptyObject
-                     )
-                  ~> "issue" := issueNum
-                  ~> jsonEmptyObject
-              )
-          result <- H.liftAff $ try do
-            resp <- fetch
-              (server <> "/sessions")
-              { method: POST
-              , headers:
-                  { "Content-Type":
-                      "application/json"
-                  }
-              , body: stringify body
+    let
+      parts = split (Pattern "/") fullName
+      owner = case index parts 0 of
+        Just o -> o
+        Nothing -> ""
+      name = case index parts 1 of
+        Just n -> n
+        Nothing -> ""
+      server = st.agentServer
+    if server == "" then
+      H.modify_ _
+        { error = Just
+            "Set agent server URL first"
+        }
+    else do
+      let
+        body = encodeJson
+          ( "repo"
+              := ( "owner" := owner
+                    ~> "name" := name
+                    ~> jsonEmptyObject
+                 )
+              ~> "issue" := issueNum
+              ~> jsonEmptyObject
+          )
+      result <- H.liftAff $ try do
+        resp <- fetch
+          (server <> "/sessions")
+          { method: POST
+          , headers:
+              { "Content-Type":
+                  "application/json"
               }
-            resp.text
-          case result of
-            Left err ->
-              H.modify_ _
-                { error = Just (message err) }
-            Right _ ->
-              H.modify_ _ { error = Nothing }
+          , body: stringify body
+          }
+        resp.text
+      case result of
+        Left err ->
+          H.modify_ _
+            { error = Just (message err) }
+        Right _ ->
+          H.modify_ _ { error = Nothing }
   SetAgentServer url -> do
     H.modify_ _ { agentServer = url }
     liftEffect $ saveAgentServer url

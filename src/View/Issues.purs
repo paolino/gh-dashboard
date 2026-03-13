@@ -6,6 +6,7 @@ module View.Issues
 import Prelude
 
 import Data.Array (any, filter, length, null, partition)
+import Data.Maybe (fromMaybe)
 import Data.Set as Set
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
@@ -199,7 +200,9 @@ renderIssueRow state isHidden (Issue i) =
             , hideButton i.htmlUrl isHidden
             , linkButton i.htmlUrl
             , copyButton i.title
-            , launchButton i.number
+            , launchButton
+                (fromMaybe "" state.expanded)
+                i.number
             ]
         , HH.td_
             [ HH.span_

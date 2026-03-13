@@ -61,10 +61,11 @@ hideButton url isHidden =
 
 -- | Launch agent button for an issue.
 launchButton
-  :: forall w. Int -> HH.HTML w Action
-launchButton issueNum =
+  :: forall w. String -> Int -> HH.HTML w Action
+launchButton repoName issueNum =
   HH.button
-    [ HE.onClick \_ -> LaunchAgent issueNum
+    [ HE.onClick \_ ->
+        LaunchAgent repoName issueNum
     , HP.class_ (HH.ClassName "btn-hide")
     , HP.title "Launch agent"
     , HP.attr (AttrName "onclick")

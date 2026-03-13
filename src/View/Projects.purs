@@ -18,7 +18,11 @@ import Halogen.HTML.Core (AttrName(..))
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Types (Project(..), ProjectItem(..), StatusField)
-import View.DetailWidgets (copyButton, refreshButton)
+import View.DetailWidgets
+  ( copyButton
+  , launchButton
+  , refreshButton
+  )
 import View.Helpers (linkButton, renderMarkdownRow)
 import View.Types (Action(..), State)
 
@@ -544,6 +548,7 @@ renderItemRow state projId mSf (ProjectItem item) =
                           repo
                           n
                       )
+                  , launchButton repo n
                   ]
                 _, _ -> []
                 <>
