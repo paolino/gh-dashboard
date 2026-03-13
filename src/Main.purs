@@ -147,6 +147,7 @@ initialState =
   , agentServer: ""
   , launchedItems: Set.empty
   , terminalKeys: Map.empty
+  , terminalUrls: Map.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -563,6 +564,9 @@ handleAction = case _ of
                 s.launchedItems
             , terminalKeys = Map.delete key
                 s.terminalKeys
+            , terminalUrls = Map.delete
+                itemKey
+                s.terminalUrls
             }
     persistView
     when opening do
@@ -1082,24 +1086,6 @@ handleAction = case _ of
             , info = Nothing
             }
         Right _ -> do
-          -- Expand the item so the terminal
-          -- div appears in the DOM
-          H.modify_ \s -> s
-            { error = Nothing
-            , info = Just
-                ( "Agent launched for "
-                    <> itemKey
-                )
-            , launchedItems =
-                Set.insert itemKey
-                  s.launchedItems
-            , expandedItems =
-                Set.insert toggleKey
-                  s.expandedItems
-            , terminalKeys =
-                Map.insert toggleKey itemKey
-                  s.terminalKeys
-            }
           let
             wsProto =
               if indexOf (Pattern "https")
@@ -1119,9 +1105,32 @@ handleAction = case _ of
               <> "-"
               <> show issueNum
               <> "/terminal"
-          liftEffect
-            $ attachTerminal elemId itemKey
-                wsUrl
+          -- Expand the item so the terminal
+          -- div appears in the DOM
+          H.modify_ \s -> s
+            { error = Nothing
+            , info = Just
+                ( "Agent launched for "
+                    <> itemKey
+                )
+            , launchedItems =
+                Set.insert itemKey
+                  s.launchedItems
+            , expandedItems =
+                Set.insert toggleKey
+                  s.expandedItems
+            , terminalKeys =
+                Map.insert toggleKey itemKey
+                  s.terminalKeys
+            , terminalUrls =
+                Map.insert itemKey wsUrl
+                  s.terminalUrls
+            }
+          -- Attach all active terminals (re-attach
+          -- any that lost their xterm instance due
+          -- to virtual DOM re-render).
+          st2 <- H.get
+          liftEffect $ reattachTerminals st2
   DetachAgent fullName issueNum -> do
     let
       itemKey = fullName <> "#"
@@ -1131,6 +1140,8 @@ handleAction = case _ of
     H.modify_ \s -> s
       { launchedItems =
           Set.delete itemKey s.launchedItems
+      , terminalUrls =
+          Map.delete itemKey s.terminalUrls
       , info = Nothing
       }
   StopAgent fullName issueNum -> do
@@ -1152,6 +1163,8 @@ handleAction = case _ of
       H.modify_ \s -> s
         { launchedItems =
             Set.delete itemKey s.launchedItems
+        , terminalUrls =
+            Map.delete itemKey s.terminalUrls
         , info = Nothing
         }
       when (server /= "") do
@@ -1186,6 +1199,23 @@ termElementId key =
   "term-"
     <> replaceAll (Pattern "/") (Replacement "-")
       (replaceAll (Pattern "#") (Replacement "-") key)
+
+-- | Re-attach all active terminals. Called after
+-- | state changes that may cause Halogen to
+-- | recreate terminal container divs.
+reattachTerminals :: State -> Effect Unit
+reattachTerminals st =
+  traverse_
+    ( \itemKey ->
+        case Map.lookup itemKey st.terminalUrls of
+          Nothing -> pure unit
+          Just wsUrl ->
+            attachTerminal
+              (termElementId itemKey)
+              itemKey
+              wsUrl
+    )
+    (Set.toUnfoldable st.launchedItems :: Array String)
 
 -- | Extract unique SHAs from runs, preserving order.
 extractShas :: Array WorkflowRun -> Array String

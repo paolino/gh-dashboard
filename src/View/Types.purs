@@ -111,4 +111,5 @@ type State =
   , agentServer :: String
   , launchedItems :: Set String
   , terminalKeys :: Map String String
+  , terminalUrls :: Map String String
   }

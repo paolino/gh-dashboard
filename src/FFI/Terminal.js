@@ -1,6 +1,14 @@
 var _terminals = {};
 
 export const attachTerminal = (elemId) => (launchKey) => (wsUrl) => () => {
+  // If terminal is still attached to the same DOM
+  // element, skip (avoid reconnect flicker)
+  if (_terminals[elemId]) {
+    var existing = document.getElementById(elemId);
+    if (existing && existing === _terminals[elemId].container) {
+      return;
+    }
+  }
   // Clean up existing terminal for this ID
   if (_terminals[elemId]) {
     try { _terminals[elemId].ws.close(); } catch (_) {}
@@ -64,7 +72,7 @@ export const attachTerminal = (elemId) => (launchKey) => (wsUrl) => () => {
     var resizeHandler = () => fitAddon.fit();
     window.addEventListener('resize', resizeHandler);
 
-    _terminals[elemId] = { term, ws, fitAddon, resizeHandler, launchKey };
+    _terminals[elemId] = { term, ws, fitAddon, resizeHandler, launchKey, container };
   });
 };
 
