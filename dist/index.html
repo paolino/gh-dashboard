@@ -166,6 +166,9 @@
     .detail-body img { max-width: 100%; }
     .terminal-container { height: 400px; background: #1a1a2e; border-radius: 4px; overflow: hidden; }
     .terminal-container .xterm { height: 100%; }
+    .repo-row.terminal-active { background: var(--bg-surface); border-left: 3px solid var(--accent); }
+    .repo-row.terminal-active td:first-child { padding-left: 9px; }
+    .repo-row.terminal-active .repo-name, .repo-row.terminal-active span { color: var(--accent); font-weight: 600; }
     .detail-row td { padding: 0 8px 8px !important; border-bottom: none !important; }
     .check-runs { display: flex; flex-direction: column; gap: 4px; }
     .check-run { display: flex; align-items: center; gap: 8px; font-size: 12px; }
