@@ -25,7 +25,7 @@ export const attachTerminal = (elemId) => (launchKey) => (wsUrl) => () => {
       cursorBlink: true,
       fontSize: 13,
       theme: {
-        background: '#080c16',
+        background: '#0f1525',
         foreground: '#e0e0e0',
         cursor: '#e94560'
       }
