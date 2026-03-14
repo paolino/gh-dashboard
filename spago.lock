@@ -17,6 +17,8 @@
             "foreign-object",
             "halogen",
             "integers",
+            "js-promise",
+            "js-promise-aff",
             "maybe",
             "ordered-collections",
             "prelude",
