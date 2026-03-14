@@ -20,6 +20,8 @@ package:
     - integers
     - foreign-object
     - ordered-collections
+    - js-promise
+    - js-promise-aff
   bundle:
     module: Main
     outfile: dist/index.js

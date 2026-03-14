@@ -27,8 +27,11 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple.Nested ((/\))
 import Data.Set as Set
 import Effect (Effect)
+import Effect.Aff (Aff)
+import FFI.Storage as FFIStorage
 import Foreign.Object as FO
 import Data.Argonaut.Core as Json
+import Promise.Aff (toAffE)
 import Types (Page(..))
 import Web.HTML (window)
 import Web.HTML.Window (localStorage)
@@ -73,17 +76,14 @@ storageKeyRepos = "gh-dashboard-repos"
 storageKeyView :: String
 storageKeyView = "gh-dashboard-view"
 
-loadToken :: Effect String
-loadToken = do
-  w <- window
-  s <- localStorage w
-  fromMaybe "" <$> Storage.getItem storageKeyToken s
+-- | Load and decrypt the token from localStorage.
+-- | Handles migration from pre-encryption plaintext tokens.
+loadToken :: Aff String
+loadToken = toAffE FFIStorage.loadTokenEncrypted
 
-saveToken :: String -> Effect Unit
-saveToken tok = do
-  w <- window
-  s <- localStorage w
-  Storage.setItem storageKeyToken tok s
+-- | Encrypt and store the token in localStorage.
+saveToken :: String -> Aff Unit
+saveToken tok = toAffE (FFIStorage.saveTokenEncrypted tok)
 
 loadRepoList :: Effect (Array String)
 loadRepoList = do
@@ -246,6 +246,9 @@ saveAgentServer url = do
   s <- localStorage w
   Storage.setItem storageKeyAgentServer url s
 
+storageKeyCryptoKey :: String
+storageKeyCryptoKey = "gh-dashboard-crypto-key"
+
 clearAll :: Effect Unit
 clearAll = do
   w <- window
@@ -253,3 +256,4 @@ clearAll = do
   Storage.removeItem storageKeyToken s
   Storage.removeItem storageKeyRepos s
   Storage.removeItem storageKeyView s
+  Storage.removeItem storageKeyCryptoKey s
