@@ -659,26 +659,30 @@ renderItemRow state projId mSf (ProjectItem item) =
                         )
                     ]
                       <> case sessionState of
-                        Just st ->
+                        Just _ ->
                           [ HH.span
                               [ HP.class_
                                   ( HH.ClassName
-                                      ( "session-badge"
-                                          <>
-                                            if st == "running" then " session-running"
-                                            else ""
-                                      )
+                                      "worktree-badge"
+                                  )
+                              , HP.title "Worktree"
+                              ]
+                              [ HH.text "\x2387 " ]
+                          ]
+                        Nothing -> []
+                      <> case sessionState of
+                        Just st | st == "running" ->
+                          [ HH.span
+                              [ HP.class_
+                                  ( HH.ClassName
+                                      "agent-badge"
                                   )
                               , HP.title
                                   ("Agent: " <> st)
                               ]
-                              [ HH.text
-                                  ( if st == "running" then "\x25C9 "
-                                    else "\x25CB "
-                                  )
-                              ]
+                              [ HH.text "\x25C9 " ]
                           ]
-                        Nothing -> []
+                        _ -> []
                       <> [ HH.text item.title ]
                   )
               , if null item.labels then
