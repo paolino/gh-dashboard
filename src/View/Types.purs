@@ -69,6 +69,7 @@ data Action
   | StopAgent String Int
   | SetAgentServer String
   | RefreshAgentSessions
+  | ToggleSessionFilter String
 
 -- | Application state (referenced by view).
 type State =
@@ -114,4 +115,5 @@ type State =
   , terminalKeys :: Map String String
   , terminalUrls :: Map String String
   , agentSessions :: Map String String
+  , sessionFilters :: Set String
   }
