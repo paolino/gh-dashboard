@@ -30,6 +30,12 @@
       --accent: #0d6efd;
       --detail-bg: #f8f9fa;
     }
+    /* Scrollbar styling */
+    * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
     body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
     .error { color: #f44336; margin-top: 12px; }
     .info { color: #4caf50; margin-top: 12px; }
