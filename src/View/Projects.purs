@@ -211,7 +211,7 @@ renderProjectDetail state projectId =
                   [ HH.text "No items loaded" ]
               Just items ->
                 let
-                  filtered =
+                  repoFiltered =
                     if
                       Set.isEmpty
                         state.projectRepoFilters then items
@@ -224,10 +224,14 @@ renderProjectDetail state projectId =
                             state.projectRepoFilters
                       )
                       items
+                  filtered = applySessionFilter
+                    state
+                    repoFiltered
                 in
                   HH.div_
                     ( [ renderNewItemForm state
                           projectId
+                      , renderSessionFilter state
                       , renderRepoFilter state items
                       ]
                         <> map
@@ -266,6 +270,77 @@ renderNewItemForm state projectId =
         ]
         [ HH.text "Add" ]
     ]
+
+-- | Session filter buttons (Worktree / Running).
+renderSessionFilter
+  :: forall w. State -> HH.HTML w Action
+renderSessionFilter state =
+  let
+    btn label icon =
+      HH.span
+        [ HP.class_
+            ( HH.ClassName
+                ( "label-tag clickable"
+                    <>
+                      if
+                        Set.member label
+                          state.sessionFilters then
+                        " active"
+                      else ""
+                )
+            )
+        , HE.onClick \_ ->
+            ToggleSessionFilter label
+        ]
+        [ HH.text (icon <> " " <> label) ]
+  in
+    HH.div
+      [ HP.class_
+          (HH.ClassName "label-selector")
+      ]
+      [ btn "Worktree" "\x2387"
+      , btn "Running" "\x25C9"
+      ]
+
+-- | Filter items by session state.
+applySessionFilter
+  :: State
+  -> Array ProjectItem
+  -> Array ProjectItem
+applySessionFilter state items =
+  if Set.isEmpty state.sessionFilters then
+    items
+  else
+    filter
+      ( \(ProjectItem i) ->
+          let
+            k = case i.repoName, i.number of
+              Just repo, Just n ->
+                Just
+                  (repo <> "#" <> show n)
+              _, _ -> Nothing
+            sess = k >>= \key ->
+              Map.lookup key
+                state.agentSessions
+            hasWorktree =
+              sess /= Nothing
+            isRunning = sess == Just "running"
+          in
+            ( not
+                ( Set.member "Worktree"
+                    state.sessionFilters
+                )
+                || hasWorktree
+            )
+              &&
+                ( not
+                    ( Set.member "Running"
+                        state.sessionFilters
+                    )
+                    || isRunning
+                )
+      )
+      items
 
 -- | Split "owner/repo" into { org, repo } pair.
 splitRepoName

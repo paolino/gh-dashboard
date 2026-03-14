@@ -154,6 +154,7 @@ initialState =
   , terminalKeys: Map.empty
   , terminalUrls: Map.empty
   , agentSessions: Map.empty
+  , sessionFilters: Set.empty
   }
 
 render :: forall m. State -> H.ComponentHTML Action () m
@@ -1218,6 +1219,13 @@ handleAction = case _ of
                     { agentSessions =
                         Map.fromFoldable entries
                     }
+  ToggleSessionFilter label ->
+    H.modify_ \s -> s
+      { sessionFilters =
+          if Set.member label s.sessionFilters then
+            Set.delete label s.sessionFilters
+          else Set.insert label s.sessionFilters
+      }
 
 -- | Convert a launch key to a DOM element ID.
 termElementId :: String -> String
