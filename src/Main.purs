@@ -775,6 +775,7 @@ handleAction = case _ of
   SwitchPage page -> do
     H.modify_ _ { currentPage = page }
     persistView
+    handleAction RefreshAgentSessions
     st <- H.get
     case page of
       ProjectsPage ->
@@ -822,6 +823,7 @@ handleAction = case _ of
         handleAction
           (RefreshProjectItems projectId)
   RefreshProjectItems projectId -> do
+    handleAction RefreshAgentSessions
     st <- H.get
     let isFirstLoad =
           not (Map.member projectId st.projectItems)
@@ -1133,6 +1135,7 @@ handleAction = case _ of
           -- to virtual DOM re-render).
           st2 <- H.get
           liftEffect $ reattachTerminals st2
+          handleAction RefreshAgentSessions
   DetachAgent fullName issueNum -> do
     let
       itemKey = fullName <> "#"
@@ -1185,6 +1188,7 @@ handleAction = case _ of
             H.modify_ _
               { error = Just (message err) }
           Right _ -> pure unit
+        handleAction RefreshAgentSessions
   SetAgentServer url -> do
     H.modify_ _ { agentServer = url }
     liftEffect $ saveAgentServer url
