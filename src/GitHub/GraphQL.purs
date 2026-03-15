@@ -254,6 +254,18 @@ fetchProjectItems token projectId =
 -- Mutations
 ------------------------------------------------------------
 
+-- | Run a GraphQL mutation that returns no useful
+-- | data (just success/failure). Eliminates the
+-- | repeated `case result of Left/Right unit`
+-- | boilerplate from every mutation.
+ghMutation
+  :: String -> String -> Json -> Aff (Either String Unit)
+ghMutation token query vars = do
+  result <- ghGraphQL token query vars
+  pure $ case result of
+    Left err -> Left err
+    Right _ -> Right unit
+
 -- | Update the status of a project item.
 updateItemStatus
   :: String
@@ -262,16 +274,8 @@ updateItemStatus
   -> String
   -> String
   -> Aff (Either String Unit)
-updateItemStatus token projectId itemId fieldId optionId = do
-  let
-    vars = encodeJson
-      ( "projectId" := projectId
-          ~> "itemId" := itemId
-          ~> "fieldId" := fieldId
-          ~> "optionId" := optionId
-          ~> jsonEmptyObject
-      )
-  result <- ghGraphQL token
+updateItemStatus token projectId itemId fieldId optionId =
+  ghMutation token
     """
     mutation(
       $projectId: ID!
@@ -287,10 +291,14 @@ updateItemStatus token projectId itemId fieldId optionId = do
       }) { projectV2Item { id } }
     }
     """
-    vars
-  case result of
-    Left err -> pure $ Left err
-    Right _ -> pure $ Right unit
+    ( encodeJson
+        ( "projectId" := projectId
+            ~> "itemId" := itemId
+            ~> "fieldId" := fieldId
+            ~> "optionId" := optionId
+            ~> jsonEmptyObject
+        )
+    )
 
 -- | Create a draft issue on a project board.
 addDraftItem
@@ -298,14 +306,8 @@ addDraftItem
   -> String
   -> String
   -> Aff (Either String Unit)
-addDraftItem token projectId title = do
-  let
-    vars = encodeJson
-      ( "projectId" := projectId
-          ~> "title" := title
-          ~> jsonEmptyObject
-      )
-  result <- ghGraphQL token
+addDraftItem token projectId title =
+  ghMutation token
     """
     mutation($projectId: ID!, $title: String!) {
       addProjectV2DraftIssue(input: {
@@ -314,10 +316,12 @@ addDraftItem token projectId title = do
       }) { projectItem { id } }
     }
     """
-    vars
-  case result of
-    Left err -> pure $ Left err
-    Right _ -> pure $ Right unit
+    ( encodeJson
+        ( "projectId" := projectId
+            ~> "title" := title
+            ~> jsonEmptyObject
+        )
+    )
 
 -- | Update a draft issue title/body.
 updateDraftItem
@@ -325,14 +329,8 @@ updateDraftItem
   -> String
   -> String
   -> Aff (Either String Unit)
-updateDraftItem token draftId title = do
-  let
-    vars = encodeJson
-      ( "draftIssueId" := draftId
-          ~> "title" := title
-          ~> jsonEmptyObject
-      )
-  result <- ghGraphQL token
+updateDraftItem token draftId title =
+  ghMutation token
     """
     mutation($draftIssueId: ID!, $title: String!) {
       updateProjectV2DraftIssue(input: {
@@ -341,10 +339,12 @@ updateDraftItem token draftId title = do
       }) { draftIssue { id } }
     }
     """
-    vars
-  case result of
-    Left err -> pure $ Left err
-    Right _ -> pure $ Right unit
+    ( encodeJson
+        ( "draftIssueId" := draftId
+            ~> "title" := title
+            ~> jsonEmptyObject
+        )
+    )
 
 -- | Rename a project.
 renameProject
@@ -352,14 +352,8 @@ renameProject
   -> String
   -> String
   -> Aff (Either String Unit)
-renameProject token projectId title = do
-  let
-    vars = encodeJson
-      ( "projectId" := projectId
-          ~> "title" := title
-          ~> jsonEmptyObject
-      )
-  result <- ghGraphQL token
+renameProject token projectId title =
+  ghMutation token
     """
     mutation($projectId: ID!, $title: String!) {
       updateProjectV2(input: {
@@ -368,10 +362,12 @@ renameProject token projectId title = do
       }) { projectV2 { id } }
     }
     """
-    vars
-  case result of
-    Left err -> pure $ Left err
-    Right _ -> pure $ Right unit
+    ( encodeJson
+        ( "projectId" := projectId
+            ~> "title" := title
+            ~> jsonEmptyObject
+        )
+    )
 
 -- | Delete a project item.
 deleteProjectItem
@@ -379,14 +375,8 @@ deleteProjectItem
   -> String
   -> String
   -> Aff (Either String Unit)
-deleteProjectItem token projectId itemId = do
-  let
-    vars = encodeJson
-      ( "projectId" := projectId
-          ~> "itemId" := itemId
-          ~> jsonEmptyObject
-      )
-  result <- ghGraphQL token
+deleteProjectItem token projectId itemId =
+  ghMutation token
     """
     mutation($projectId: ID!, $itemId: ID!) {
       deleteProjectV2Item(input: {
@@ -395,10 +385,12 @@ deleteProjectItem token projectId itemId = do
       }) { deletedItemId }
     }
     """
-    vars
-  case result of
-    Left err -> pure $ Left err
-    Right _ -> pure $ Right unit
+    ( encodeJson
+        ( "projectId" := projectId
+            ~> "itemId" := itemId
+            ~> jsonEmptyObject
+        )
+    )
 
 ------------------------------------------------------------
 -- Response navigation helpers

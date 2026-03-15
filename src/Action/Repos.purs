@@ -50,9 +50,11 @@ import Prelude
 import Action.Common
   ( Dispatch
   , HalogenAction
-  , emptyDetail
+  , guardExpanded
   , persistView
   , termElementId
+  , toggleSet
+  , updateDetail
   )
 import Data.Array
   ( filter
@@ -120,27 +122,15 @@ handleRefreshIssues _ = do
       H.modify_ _ { issuesLoading = true }
       result <- H.liftAff
         (fetchRepoIssues st.token fullName)
-      st2 <- H.get
-      when (st2.expanded == Just fullName) do
-        let
-          issues = case result of
-            Right is -> is
-            Left _ -> []
-        case st2.details of
-          Nothing ->
-            H.modify_ _
-              { details = Just emptyDetail
-                  { issues = issues
-                  , issueCount = length issues
-                  }
-              }
-          Just detail ->
-            H.modify_ _
-              { details = Just detail
-                  { issues = issues
-                  , issueCount = length issues
-                  }
-              }
+      let
+        issues = case result of
+          Right is -> is
+          Left _ -> []
+      guardExpanded fullName $
+        updateDetail \d -> d
+          { issues = issues
+          , issueCount = length issues
+          }
       H.modify_ _ { issuesLoading = false }
 
 handleRefreshIssue
@@ -152,32 +142,19 @@ handleRefreshIssue issueNum = do
     Just fullName -> do
       result <- H.liftAff
         (fetchIssue st.token fullName issueNum)
-      st2 <- H.get
-      when (st2.expanded == Just fullName) do
-        case result of
-          Left _ -> pure unit
-          Right issue ->
-            case st2.details of
-              Nothing ->
-                H.modify_ _
-                  { details = Just emptyDetail
-                      { issues = [ issue ]
-                      , issueCount = 1
-                      }
-                  }
-              Just detail ->
-                let
-                  updated = map
-                    ( \(Issue i) ->
-                        if i.number == issueNum then issue
-                        else Issue i
-                    )
-                    detail.issues
-                in
-                  H.modify_ _
-                    { details = Just detail
-                        { issues = updated }
-                    }
+      case result of
+        Left _ -> pure unit
+        Right issue ->
+          guardExpanded fullName $
+            updateDetail \d -> d
+              { issues = map
+                  ( \(Issue i) ->
+                      if i.number == issueNum then
+                        issue
+                      else Issue i
+                  )
+                  d.issues
+              }
 
 handleRefreshPRs
   :: forall o. Dispatch o -> HalogenAction o
@@ -189,85 +166,59 @@ handleRefreshPRs _ = do
       H.modify_ _ { prsLoading = true }
       prsResult <- H.liftAff
         (fetchRepoPRs st.token fullName)
-      st2 <- H.get
-      when (st2.expanded == Just fullName) do
-        let
-          prs = case prsResult of
-            Right ps -> ps
-            Left _ -> []
-        case st2.details of
-          Nothing ->
-            H.modify_ _
-              { details = Just emptyDetail
-                  { prCount = length prs }
-              }
-          Just detail ->
-            H.modify_ _
-              { details = Just detail
-                  { pullRequests = []
-                  , prCount = length prs
-                  , prChecks = Map.empty
-                  }
-              }
-        traverse_
-          ( \pr@(PullRequest p) -> do
-              st3 <- H.get
-              when
-                (st3.expanded == Just fullName)
-                do
+      let
+        prs = case prsResult of
+          Right ps -> ps
+          Left _ -> []
+      guardExpanded fullName $
+        updateDetail \d -> d
+          { pullRequests = []
+          , prCount = length prs
+          , prChecks = Map.empty
+          }
+      traverse_
+        ( \pr@(PullRequest p) ->
+            guardExpanded fullName do
+              let
+                isVisible = not
+                  ( Set.member p.htmlUrl
+                      st.hiddenItems
+                  )
+              checks <-
+                if isVisible then do
+                  st3 <- H.get
+                  cr <- H.liftAff $
+                    fetchCheckRuns st3.token
+                      fullName
+                      p.headSha
+                  cs <- H.liftAff $
+                    fetchCommitStatuses
+                      st3.token
+                      fullName
+                      p.headSha
                   let
-                    isVisible = not
-                      ( Set.member p.htmlUrl
-                          st3.hiddenItems
-                      )
-                  checks <-
-                    if isVisible then do
-                      cr <- H.liftAff $
-                        fetchCheckRuns st3.token
-                          fullName
-                          p.headSha
-                      cs <- H.liftAff $
-                        fetchCommitStatuses
-                          st3.token
-                          fullName
-                          p.headSha
-                      let
-                        runs = case cr of
-                          Right r -> r
-                          Left _ -> []
-                        statuses = case cs of
-                          Right s -> s
-                          Left _ -> []
-                      pure $ Just $ Tuple
-                        p.number
-                        (runs <> statuses)
-                    else pure Nothing
-                  st4 <- H.get
-                  case st4.details of
-                    Nothing -> pure unit
-                    Just detail ->
-                      H.modify_ _
-                        { details = Just
-                            detail
-                              { pullRequests =
-                                  snoc
-                                    detail.pullRequests
-                                    pr
-                              , prChecks =
-                                  case checks of
-                                    Nothing ->
-                                      detail.prChecks
-                                    Just
-                                      ( Tuple n
-                                          c
-                                      ) ->
-                                      Map.insert n
-                                        c
-                                        detail.prChecks
-                              }
-                        }
-          )
-          prs
+                    runs = case cr of
+                      Right r -> r
+                      Left _ -> []
+                    statuses = case cs of
+                      Right s -> s
+                      Left _ -> []
+                  pure $ Just $ Tuple
+                    p.number
+                    (runs <> statuses)
+                else pure Nothing
+              updateDetail \d -> d
+                { pullRequests =
+                    snoc d.pullRequests pr
+                , prChecks =
+                    case checks of
+                      Nothing -> d.prChecks
+                      Just (Tuple n c) ->
+                        Map.insert n c
+                          d.prChecks
+                }
+        )
+        prs
       H.modify_ _ { prsLoading = false }
 
 handleRefreshPR
@@ -293,32 +244,20 @@ handleRefreshWorkflows _ = do
         ( fetchWorkflowRuns st.token fullName
             branch
         )
-      st2 <- H.get
-      when (st2.expanded == Just fullName) do
-        let
-          runs = case result of
-            Right rs -> rs
-            Left _ -> []
-          shas = extractShas runs
-          shaCount = length shas
-        case st2.details of
-          Nothing ->
-            H.modify_ _
-              { details = Just emptyDetail
-                  { workflowRuns = runs
-                  , workflowCount = shaCount
-                  }
-              }
-          Just detail ->
-            H.modify_ _
-              { details = Just detail
-                  { workflowRuns = runs
-                  , workflowCount = shaCount
-                  , workflowJobs = Map.empty
-                  , workflowShaIndex = 0
-                  , workflowShaPRs = Map.empty
-                  }
-              }
+      let
+        runs = case result of
+          Right rs -> rs
+          Left _ -> []
+        shas = extractShas runs
+        shaCount = length shas
+      guardExpanded fullName do
+        updateDetail \d -> d
+          { workflowRuns = runs
+          , workflowCount = shaCount
+          , workflowJobs = Map.empty
+          , workflowShaIndex = 0
+          , workflowShaPRs = Map.empty
+          }
         loadWorkflowShaDetails fullName
       H.modify_ _ { workflowsLoading = false }
 
@@ -545,12 +484,8 @@ handleHideItem
   :: forall o. String -> HalogenAction o
 handleHideItem url = do
   st <- H.get
-  let
-    newHidden =
-      if Set.member url st.hiddenItems then
-        Set.delete url st.hiddenItems
-      else Set.insert url st.hiddenItems
-  H.modify_ _ { hiddenItems = newHidden }
+  H.modify_ _
+    { hiddenItems = toggleSet url st.hiddenItems }
   persistView
 
 -- | Extract unique SHAs from runs, preserving order.
@@ -600,55 +535,41 @@ loadWorkflowShaDetails fullName = do
             do
               prResult <- H.liftAff $
                 fetchCommitPRs st.token fullName sha
-              st2 <- H.get
               case prResult of
                 Right (Just pr) ->
-                  case st2.details of
-                    Nothing -> pure unit
-                    Just d ->
-                      H.modify_ _
-                        { details = Just d
-                            { workflowShaPRs =
-                                Map.insert sha pr
-                                  d.workflowShaPRs
-                            }
-                        }
+                  updateDetail \d -> d
+                    { workflowShaPRs =
+                        Map.insert sha pr
+                          d.workflowShaPRs
+                    }
                 _ -> pure unit
           -- Fetch jobs for each run
           traverse_
-            ( \(WorkflowRun wr) -> do
-                st3 <- H.get
-                when
-                  (st3.expanded == Just fullName)
-                  do
-                    jobsResult <- H.liftAff $
-                      fetchWorkflowJobs st3.token
-                        fullName
-                        wr.runId
-                    let
-                      nonSuccess =
-                        case jobsResult of
-                          Right js -> filter
-                            ( \(WorkflowJob j) ->
-                                j.conclusion
-                                  /= Just "success"
-                            )
-                            js
-                          Left _ -> []
-                    when (not (null nonSuccess)) do
-                      st4 <- H.get
-                      case st4.details of
-                        Nothing -> pure unit
-                        Just d ->
-                          H.modify_ _
-                            { details = Just d
-                                { workflowJobs =
-                                    Map.insert
-                                      wr.name
-                                      nonSuccess
-                                      d.workflowJobs
-                                }
-                            }
+            ( \(WorkflowRun wr) ->
+                guardExpanded fullName do
+                  st3 <- H.get
+                  jobsResult <- H.liftAff $
+                    fetchWorkflowJobs st3.token
+                      fullName
+                      wr.runId
+                  let
+                    nonSuccess =
+                      case jobsResult of
+                        Right js -> filter
+                          ( \(WorkflowJob j) ->
+                              j.conclusion
+                                /= Just "success"
+                          )
+                          js
+                        Left _ -> []
+                  when (not (null nonSuccess)) $
+                    updateDetail \d -> d
+                      { workflowJobs =
+                          Map.insert
+                            wr.name
+                            nonSuccess
+                            d.workflowJobs
+                      }
             )
             shaRuns
 

@@ -39,6 +39,7 @@ import Action.Common
   ( Dispatch
   , HalogenAction
   , termElementId
+  , toggleSet
   )
 import Data.Argonaut.Core
   ( Json
@@ -278,9 +279,7 @@ handleToggleSessionFilter
 handleToggleSessionFilter label =
   H.modify_ \s -> s
     { sessionFilters =
-        if Set.member label s.sessionFilters then
-          Set.delete label s.sessionFilters
-        else Set.insert label s.sessionFilters
+        toggleSet label s.sessionFilters
     }
 
 -- | Re-attach all active terminals. Called after

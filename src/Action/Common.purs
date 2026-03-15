@@ -26,11 +26,14 @@ module Action.Common
   , persistView
   , emptyDetail
   , termElementId
+  , updateDetail
+  , guardExpanded
   ) where
 
 import Prelude
 
 import Data.Map as Map
+import Data.Maybe (Maybe(..))
 import Data.Set as Set
 import Data.String (Pattern(..), Replacement(..), replaceAll)
 import Effect.Class (liftEffect)
@@ -91,6 +94,35 @@ termElementId key =
   "term-"
     <> replaceAll (Pattern "/") (Replacement "-")
       (replaceAll (Pattern "#") (Replacement "-") key)
+
+-- | Modify the current repo detail, creating an empty
+-- | one if none exists yet. This eliminates the
+-- | repeated Nothing/Just case split that appears in
+-- | every fetch handler.
+updateDetail
+  :: forall o
+   . (RepoDetail -> RepoDetail)
+  -> HalogenAction o
+updateDetail f = do
+  st <- H.get
+  case st.details of
+    Nothing ->
+      H.modify_ _ { details = Just (f emptyDetail) }
+    Just detail ->
+      H.modify_ _ { details = Just (f detail) }
+
+-- | Run an action only if the given repo is still
+-- | expanded. Used after async fetches to avoid
+-- | updating stale state when the user collapsed
+-- | the repo while the request was in flight.
+guardExpanded
+  :: forall o
+   . String
+  -> HalogenAction o
+  -> HalogenAction o
+guardExpanded fullName action = do
+  st <- H.get
+  when (st.expanded == Just fullName) action
 
 -- | An empty repo detail record, used when opening
 -- | a section before any data has been fetched.
