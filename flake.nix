@@ -42,11 +42,7 @@
               pkgs.nodejs_20
               pkgs.just
               pkgs.python3
-              pkgs.chromium
             ];
-            shellHook = ''
-              export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${pkgs.chromium}/bin/chromium
-            '';
           };
         }
       );
