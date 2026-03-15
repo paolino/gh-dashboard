@@ -96,24 +96,6 @@ renderDashboard
 renderDashboard state repos =
   HH.div_
     [ renderToolbar state
-    , if state.showAddRepo then
-        HH.div
-          [ HP.class_ (HH.ClassName "add-repo-bar") ]
-          [ HH.input
-              [ HP.placeholder
-                  "https://github.com/owner/repo"
-              , HP.value state.addRepoInput
-              , HE.onValueInput SetAddRepoInput
-              , HP.class_
-                  (HH.ClassName "filter-input")
-              ]
-          , HH.button
-              [ HE.onClick \_ -> SubmitAddRepo
-              , HP.class_ (HH.ClassName "btn-small")
-              ]
-              [ HH.text "Add" ]
-          ]
-      else HH.text ""
     , case state.error of
         Just err ->
           HH.div
@@ -122,16 +104,47 @@ renderDashboard state repos =
         Nothing -> HH.text ""
     , case state.currentPage of
         ReposPage ->
-          if null repos then
-            HH.p
-              [ HP.class_
-                  (HH.ClassName "muted")
-              ]
-              [ HH.text
-                  "No repositories found."
-              ]
-          else
-            renderRepoTable state repos
+          HH.div_
+            ( ( if state.showAddRepo then
+                  [ HH.div
+                      [ HP.class_
+                          (HH.ClassName "add-repo-bar")
+                      ]
+                      [ HH.input
+                          [ HP.placeholder
+                              "https://github.com/owner/repo"
+                          , HP.value state.addRepoInput
+                          , HE.onValueInput
+                              SetAddRepoInput
+                          , HP.class_
+                              ( HH.ClassName
+                                  "filter-input"
+                              )
+                          ]
+                      , HH.button
+                          [ HE.onClick \_ ->
+                              SubmitAddRepo
+                          , HP.class_
+                              (HH.ClassName "btn-small")
+                          ]
+                          [ HH.text "Add" ]
+                      ]
+                  ]
+                else []
+              )
+                <>
+                  if null repos then
+                    [ HH.p
+                        [ HP.class_
+                            (HH.ClassName "muted")
+                        ]
+                        [ HH.text
+                            "No repositories found."
+                        ]
+                    ]
+                  else
+                    [ renderRepoTable state repos ]
+            )
         ProjectsPage ->
           renderProjects state
     ]
@@ -173,23 +186,27 @@ renderToolbar state =
             ]
             [ HH.text "Projects" ]
         ]
-    , HH.button
-        [ HE.onClick \_ -> ToggleAddRepo
-        , HP.class_
-            ( HH.ClassName
-                ( "btn-back"
-                    <> activeIf state.showAddRepo
-                )
-            )
-        , HP.title "Add repository"
-        ]
-        [ HH.text "+" ]
-    , HH.input
-        [ HP.placeholder "Filter repos..."
-        , HP.value state.filterText
-        , HE.onValueInput SetFilter
-        , HP.class_ (HH.ClassName "filter-input")
-        ]
+    , if state.currentPage == ReposPage then
+        HH.button
+          [ HE.onClick \_ -> ToggleAddRepo
+          , HP.class_
+              ( HH.ClassName
+                  ( "btn-back"
+                      <> activeIf state.showAddRepo
+                  )
+              )
+          , HP.title "Add repository"
+          ]
+          [ HH.text "+" ]
+      else HH.text ""
+    , if state.currentPage == ReposPage then
+        HH.input
+          [ HP.placeholder "Filter repos..."
+          , HP.value state.filterText
+          , HE.onValueInput SetFilter
+          , HP.class_ (HH.ClassName "filter-input")
+          ]
+      else HH.text ""
     , renderRateLimit state.rateLimit
     , HH.div
         [ HP.class_
