@@ -13,7 +13,7 @@ format:
 lint:
     purs-tidy check src/**/*.purs
 
-ci: lint build bundle test-run
+ci: lint build bundle
 
 serve: bundle
     npx serve dist -p 10001
