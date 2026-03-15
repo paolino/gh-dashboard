@@ -36,7 +36,7 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 0; margin: 0; }
     .error { color: #f44336; margin-top: 12px; }
     .info { color: #4caf50; margin-top: 12px; }
     .muted { color: var(--text-muted); }
@@ -198,7 +198,7 @@
     .tab-btn:hover { color: var(--text); }
     .tab-btn.active { background: var(--bg); color: var(--text); border-color: var(--border); border-bottom: 1px solid var(--bg); }
     @media (max-width: 640px) {
-      body { padding: 12px 8px; }
+      body { padding: 0; }
       .form-container { margin-top: 40px; }
       .toolbar { gap: 6px; }
       .toolbar-timer { margin-left: 0; width: 100%; justify-content: flex-start; margin-top: 4px; }
