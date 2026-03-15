@@ -322,8 +322,11 @@ applySessionFilter state items =
             sess = k >>= \key ->
               Map.lookup key
                 state.agentSessions
-            hasWorktree =
-              sess /= Nothing
+            hasWorktree = case k of
+              Just key ->
+                Set.member key
+                  state.agentWorktrees
+              Nothing -> false
             isRunning = sess == Just "running"
           in
             ( not
@@ -626,12 +629,17 @@ renderItemRow state projId mSf (ProjectItem item) =
     sessionState = case itemKey of
       Just k -> Map.lookup k state.agentSessions
       Nothing -> Nothing
+    hasWorktree = case itemKey of
+      Just k ->
+        Set.member k state.agentWorktrees
+      Nothing -> false
     rowClass = "repo-row"
       <>
         if hasTerminal then " terminal-active"
-        else case sessionState of
-          Just _ -> " session-active"
-          Nothing -> ""
+        else if sessionState == Just "running" then
+          " session-active"
+        else if hasWorktree then " session-active"
+        else ""
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
@@ -733,18 +741,19 @@ renderItemRow state projId mSf (ProjectItem item) =
                             Nothing -> ""
                         )
                     ]
-                      <> case sessionState of
-                        Just _ ->
-                          [ HH.span
-                              [ HP.class_
-                                  ( HH.ClassName
-                                      "worktree-badge"
-                                  )
-                              , HP.title "Worktree"
-                              ]
-                              [ HH.text "\x2387 " ]
-                          ]
-                        Nothing -> []
+                      <>
+                        ( if hasWorktree then
+                            [ HH.span
+                                [ HP.class_
+                                    ( HH.ClassName
+                                        "worktree-badge"
+                                    )
+                                , HP.title "Worktree"
+                                ]
+                                [ HH.text "\x2387 " ]
+                            ]
+                          else []
+                        )
                       <> case sessionState of
                         Just st | st == "running" ->
                           [ HH.span

@@ -199,12 +199,15 @@ renderIssueRow state isHidden (Issue i) =
       state.launchedItems
     sessionState = Map.lookup launchKey
       state.agentSessions
+    hasWorktree = Set.member launchKey
+      state.agentWorktrees
     rowClass = "repo-row"
       <>
         if hasTerminal then " terminal-active"
-        else case sessionState of
-          Just _ -> " session-active"
-          Nothing -> ""
+        else if sessionState == Just "running" then
+          " session-active"
+        else if hasWorktree then " session-active"
+        else ""
   in
     [ HH.tr
         [ HE.onClick \_ -> ToggleItem key
@@ -230,18 +233,21 @@ renderIssueRow state isHidden (Issue i) =
                           <> " "
                       )
                   ]
-                    <> case sessionState of
-                      Just _ ->
-                        [ HH.span
-                            [ HP.class_
-                                ( HH.ClassName
-                                    "worktree-badge"
-                                )
-                            , HP.title "Worktree"
-                            ]
-                            [ HH.text "\x2387 " ]
-                        ]
-                      Nothing -> []
+                    <>
+                      ( if
+                          Set.member launchKey
+                            state.agentWorktrees then
+                          [ HH.span
+                              [ HP.class_
+                                  ( HH.ClassName
+                                      "worktree-badge"
+                                  )
+                              , HP.title "Worktree"
+                              ]
+                              [ HH.text "\x2387 " ]
+                          ]
+                        else []
+                      )
                     <> case sessionState of
                       Just st | st == "running" ->
                         [ HH.span
@@ -255,7 +261,7 @@ renderIssueRow state isHidden (Issue i) =
                             [ HH.text "\x25C9 " ]
                         ]
                       _ -> []
-                    <> [ HH.text i.title ]
+                        <> [ HH.text i.title ]
                 )
             , renderLabels i.labels
             ]

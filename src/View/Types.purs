@@ -115,5 +115,6 @@ type State =
   , terminalKeys :: Map String String
   , terminalUrls :: Map String String
   , agentSessions :: Map String String
+  , agentWorktrees :: Set String
   , sessionFilters :: Set String
   }

@@ -162,6 +162,7 @@ initialState =
   , terminalKeys: Map.empty
   , terminalUrls: Map.empty
   , agentSessions: Map.empty
+  , agentWorktrees: Set.empty
   , sessionFilters: Set.empty
   }
 

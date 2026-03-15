@@ -273,6 +273,30 @@ handleRefreshAgentSessions = do
                   { agentSessions =
                       Map.fromFoldable entries
                   }
+    -- Fetch worktree presence independently
+    wtResult <- H.liftAff $ try do
+      resp <- fetch
+        (st.agentServer <> "/worktrees")
+        { method: GET }
+      resp.text
+    case wtResult of
+      Left _ -> pure unit
+      Right wtTxt -> case jsonParser wtTxt of
+        Left _ -> pure unit
+        Right wtJson ->
+          case toArray wtJson of
+            Nothing -> pure unit
+            Just arr ->
+              let
+                keys = arr >>= \wj ->
+                  case parseWorktreeKey wj of
+                    Nothing -> []
+                    Just k -> [ k ]
+              in
+                H.modify_ _
+                  { agentWorktrees =
+                      Set.fromFoldable keys
+                  }
 
 handleToggleSessionFilter
   :: forall o. String -> HalogenAction o
@@ -315,3 +339,14 @@ parseSession json = do
   Just $ Tuple
     (owner <> "/" <> name <> "#" <> show issue)
     state
+
+-- | Parse a worktree JSON object into a session key.
+parseWorktreeKey :: Json -> Maybe String
+parseWorktreeKey json = do
+  obj <- toObject json
+  repoJson <- hush (obj .: "repo")
+  repoObj <- toObject repoJson
+  owner <- hush (repoObj .: "owner") :: Maybe String
+  name <- hush (repoObj .: "name") :: Maybe String
+  issue <- hush (obj .: "issue") :: Maybe Int
+  Just (owner <> "/" <> name <> "#" <> show issue)
