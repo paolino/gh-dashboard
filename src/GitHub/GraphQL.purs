@@ -41,6 +41,7 @@ import Data.Argonaut.Core
   , stringify
   , toObject
   )
+import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Argonaut.Decode.Combinators ((.:), (.:?))
 import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Argonaut.Encode.Combinators ((~>), (:=))
@@ -400,42 +401,30 @@ deleteProjectItem token projectId itemId =
 navigateProjects
   :: Json -> Either String (Array Project)
 navigateProjects json = do
-  obj <- note "Expected object"
-    (toObject json)
-  dataJson <- lmap show $ obj .: "data"
-  dataObj <- note "Expected data object"
-    (toObject dataJson)
-  viewerJson <- lmap show $
-    dataObj .: "viewer"
-  viewerObj <- note "Expected viewer object"
-    (toObject viewerJson)
-  projsJson <- lmap show $
-    viewerObj .: "projectsV2"
-  projsObj <- note "Expected projects object"
-    (toObject projsJson)
-  nodes <- lmap show $ projsObj .: "nodes"
+  nodesJson <- jsonField "data" json
+    >>= jsonField "viewer"
+    >>= jsonField "projectsV2"
+    >>= jsonField "nodes"
+  (nodes :: Array Json) <- lmap show $ decodeJson nodesJson
   traverse parseProject nodes
 
 -- | Parse a single project node (light).
 parseProject :: Json -> Either String Project
-parseProject json = case toObject json of
-  Nothing -> Left "Expected project object"
-  Just obj -> do
-    id_ <- lmap show $ obj .: "id"
-    title_ <- lmap show $ obj .: "title"
-    url_ <- lmap show $ obj .: "url"
-    itemsJson <- lmap show $ obj .: "items"
-    case toObject itemsJson of
-      Nothing -> Left "Expected items object"
-      Just itemsObj -> do
-        count <- lmap show $
-          itemsObj .: "totalCount"
-        Right $ Project
-          { id: id_
-          , title: title_
-          , url: url_
-          , itemCount: count
-          }
+parseProject json = do
+  obj <- note "Expected project object"
+    (toObject json)
+  id_ <- lmap show $ obj .: "id"
+  title_ <- lmap show $ obj .: "title"
+  url_ <- lmap show $ obj .: "url"
+  count <- jsonField "items" json
+    >>= jsonField "totalCount"
+    >>= (lmap show <<< decodeJson)
+  Right $ Project
+    { id: id_
+    , title: title_
+    , url: url_
+    , itemCount: count
+    }
 
 -- | Navigate GraphQL response to one page of
 -- | project items.
@@ -448,34 +437,20 @@ navigateProjectItems
        , endCursor :: Maybe String
        }
 navigateProjectItems json = do
-  obj <- note "Expected object"
-    (toObject json)
-  dataJson <- lmap show $ obj .: "data"
-  dataObj <- note "Expected data object"
-    (toObject dataJson)
-  nodeJson <- lmap show $ dataObj .: "node"
-  nodeObj <- note "Expected node object"
-    (toObject nodeJson)
+  nodeJson <- jsonField "data" json
+    >>= jsonField "node"
   let statusField_ = parseStatusField nodeJson
-  itemsJson <- lmap show $
-    nodeObj .: "items"
-  itemsObj <- note "Expected items object"
-    (toObject itemsJson)
-  pageInfoJson <- lmap show $
-    itemsObj .: "pageInfo"
-  pageInfoObj <- note "Expected pageInfo object"
-    (toObject pageInfoJson)
-  hasNext <- lmap show $
-    pageInfoObj .: "hasNextPage"
+  itemsJson <- jsonField "items" nodeJson
+  pageInfoJson <- jsonField "pageInfo" itemsJson
+  hasNext <- jsonField "hasNextPage" pageInfoJson
+    >>= (lmap show <<< decodeJson)
   let
     endCursor_ =
-      case
-        pageInfoObj .: "endCursor"
-        of
-        Right c -> Just c
-        Left _ -> Nothing
-  itemNodes <- lmap show $
-    itemsObj .: "nodes"
+      optField "endCursor" pageInfoJson
+        :: Maybe String
+  nodesJson <- jsonField "nodes" itemsJson
+  (itemNodes :: Array Json) <- lmap show $
+    decodeJson nodesJson
   items <- traverse parseProjectItem itemNodes
   Right
     { items: catMaybes items
@@ -488,6 +463,29 @@ navigateProjectItems json = do
 note :: forall a. String -> Maybe a -> Either String a
 note msg Nothing = Left msg
 note _ (Just a) = Right a
+
+-- | Navigate into a JSON object field, returning the
+-- | value as Json. Combines `toObject` + `.:` into a
+-- | single step to reduce boilerplate.
+jsonField :: String -> Json -> Either String Json
+jsonField key json = do
+  obj <- note ("Expected object at '" <> key <> "'")
+    (toObject json)
+  lmap show $ obj .: key
+
+-- | Try to read an optional string/value from a JSON
+-- | object. Returns Nothing on missing or error.
+optField
+  :: forall a
+   . DecodeJson a
+  => String
+  -> Json
+  -> Maybe a
+optField key json = do
+  obj <- toObject json
+  case obj .: key of
+    Right v -> Just v
+    Left _ -> Nothing
 
 -- | Parse a single project item node.
 parseProjectItem
@@ -504,32 +502,19 @@ parseProjectItem json = case toObject json of
           Left _ -> Right Nothing
           Right title_ -> do
             let
-              url_ = case contentObj .: "url" of
-                Right u -> Just u
-                Left _ -> Nothing
+              url_ =
+                optField "url" contentJson
+                  :: Maybe String
               number_ =
-                case
-                  contentObj .: "number"
-                  of
-                  Right n -> Just n
-                  Left _ -> Nothing
-              body_ = case contentObj .: "body" of
-                Right b -> Just b
-                Left _ -> Nothing
+                optField "number" contentJson
+                  :: Maybe Int
+              body_ =
+                optField "body" contentJson
+                  :: Maybe String
               repoName_ =
-                case
-                  contentObj .: "repository"
-                  of
-                  Right repoJson ->
-                    case toObject repoJson of
-                      Just repoObj ->
-                        case
-                          repoObj .: "nameWithOwner"
-                          of
-                          Right n -> Just n
-                          Left _ -> Nothing
-                      Nothing -> Nothing
-                  Left _ -> Nothing
+                optField "repository" contentJson
+                  >>= optField "nameWithOwner"
+                  :: Maybe String
               draftId_ = case contentObj .: "id" of
                 Right d
                   | isNothing url_ -> Just d
@@ -537,30 +522,27 @@ parseProjectItem json = case toObject json of
               itemType_ =
                 if isNothing url_ then "DRAFT_ISSUE"
                 else "ISSUE"
-            fieldValsJson <- lmap show $
-              obj .: "fieldValues"
-            case toObject fieldValsJson of
-              Nothing -> Right Nothing
-              Just fvObj -> do
-                fvNodes :: Array Json <-
-                  lmap show $ fvObj .: "nodes"
-                let
-                  status_ = extractFieldValue
-                    "Status"
-                    fvNodes
-                  labels_ = extractLabels fvNodes
-                Right $ Just $ ProjectItem
-                  { itemId: itemId_
-                  , draftId: draftId_
-                  , title: title_
-                  , status: status_
-                  , itemType: itemType_
-                  , url: url_
-                  , repoName: repoName_
-                  , labels: labels_
-                  , number: number_
-                  , body: body_
-                  }
+            fvNodesJson <- jsonField "fieldValues" json
+              >>= jsonField "nodes"
+            (fvNodes :: Array Json) <- lmap show $
+              decodeJson fvNodesJson
+            let
+              status_ = extractFieldValue
+                "Status"
+                fvNodes
+              labels_ = extractLabels fvNodes
+            Right $ Just $ ProjectItem
+              { itemId: itemId_
+              , draftId: draftId_
+              , title: title_
+              , status: status_
+              , itemType: itemType_
+              , url: url_
+              , repoName: repoName_
+              , labels: labels_
+              , number: number_
+              , body: body_
+              }
 
 -- | Extract a single-select field value by name.
 extractFieldValue
