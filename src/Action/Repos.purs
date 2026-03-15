@@ -58,6 +58,7 @@ import Action.Common
   )
 import Data.Array
   ( filter
+  , find
   , index
   , length
   , null
@@ -238,7 +239,14 @@ handleRefreshWorkflows _ = do
     Nothing -> pure unit
     Just fullName -> do
       let
-        branch = "master"
+        branch =
+          case
+            find
+              (\(Repo r) -> r.fullName == fullName)
+              st.repos
+            of
+            Just (Repo r) -> r.defaultBranch
+            Nothing -> "main"
       H.modify_ _ { workflowsLoading = true }
       result <- H.liftAff
         ( fetchWorkflowRuns st.token fullName
