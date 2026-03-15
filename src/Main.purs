@@ -76,6 +76,7 @@ import Data.Set as Set
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import FFI.Cache as FFI.Cache
 import FFI.Clipboard (copyToClipboard)
 import FFI.Storage as FFIStorage
 import FFI.Theme (setBodyTheme)
@@ -345,6 +346,7 @@ handleAction = case _ of
       w <- window
       confirm "Reset all saved data?" w
     when ok do
+      H.liftAff FFI.Cache.clearCache
       liftEffect do
         clearAll
         setBodyTheme true
