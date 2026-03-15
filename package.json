@@ -1,0 +1,15 @@
+{
+  "name": "gh-dashboard-issue-63",
+  "version": "1.0.0",
+  "description": "[![CI](https://github.com/lambdasistemi/gh-dashboard/actions/workflows/ci.yaml/badge.svg)](https://github.com/lambdasistemi/gh-dashboard/actions/workflows/ci.yaml)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

@@ -23,5 +23,11 @@ restart: bundle
     sleep 1
     npx serve dist -p 10001
 
+test: bundle
+    npx playwright test
+
+test-auth: bundle
+    GH_DASHBOARD_TOKEN=$(gh auth token) npx playwright test
+
 clean:
     rm -rf output/ dist/index.js
