@@ -1,10 +1,14 @@
--- | GitHub REST API client.
+-- | GitHub REST API client with IndexedDB caching.
 -- |
 -- | This module provides the low-level HTTP plumbing for
 -- | talking to the GitHub REST API v3:
 -- |
--- | - `ghFetch`: authenticated GET with rate-limit and
--- |   Link-header parsing.
+-- | - `ghFetch`: authenticated GET with ETag-based
+-- |   caching via IndexedDB. On each request:
+-- |   1. Look up the cached ETag for this URL
+-- |   2. Send `If-None-Match` with the cached ETag
+-- |   3. On 304 Not Modified: return the cached body
+-- |   4. On 200: store the new ETag + body in cache
 -- | - `fetchAllPages`: automatic pagination over any
 -- |   endpoint that returns a JSON array.
 -- |
@@ -55,6 +59,7 @@ import Effect.Aff (Aff, try)
 import Effect.Exception (message)
 import Fetch (fetch)
 import Fetch.Internal.Headers as Headers
+import FFI.Cache as Cache
 import Types
   ( CheckRun(..)
   , CommitPR
@@ -78,44 +83,73 @@ type GHResponse =
   , linkNext :: Maybe String
   }
 
--- | Fetch a full GitHub API URL with authentication.
--- | Returns the parsed JSON body together with
--- | rate-limit headers and the next-page link (if any).
+-- | Fetch a full GitHub API URL with authentication
+-- | and ETag-based caching.
+-- |
+-- | 1. Look up cached ETag for this URL in IndexedDB
+-- | 2. Send `If-None-Match` with the cached ETag
+-- | 3. On 304: parse and return the cached body
+-- | 4. On 200: store new ETag + body, return fresh data
 ghFetch
   :: String
   -> String
   -> Aff (Either String GHResponse)
 ghFetch token url = do
+  -- Check cache for a stored ETag
+  cached <- try (Cache.getCachedResponse url)
+  let
+    cachedETag = case cached of
+      Right (Just c) -> c.etag
+      _ -> ""
   result <- try do
     resp <- fetch url
       { headers:
           { "Accept": "application/vnd.github.v3+json"
           , "Authorization": "Bearer " <> token
-          , "If-None-Match": ""
+          , "If-None-Match": cachedETag
           }
       }
     body <- resp.text
-    pure { body, headers: resp.headers }
+    pure
+      { body
+      , headers: resp.headers
+      , status: resp.status
+      }
   case result of
     Left err -> pure $ Left (message err)
-    Right r -> case jsonParser r.body of
-      Left e ->
-        pure $ Left ("JSON parse error: " <> e)
-      Right json ->
-        let
-          rl = do
-            rem <-
-              Headers.lookup "x-ratelimit-remaining"
-                r.headers
-                >>= Int.fromString
-            lim <-
-              Headers.lookup "x-ratelimit-limit"
-                r.headers
-                >>= Int.fromString
-            Just { remaining: rem, limit: lim }
-          next = Headers.lookup "link" r.headers
-            >>= parseLinkNext
-        in
+    Right r -> do
+      let
+        rl = do
+          rem <-
+            Headers.lookup "x-ratelimit-remaining"
+              r.headers
+              >>= Int.fromString
+          lim <-
+            Headers.lookup "x-ratelimit-limit"
+              r.headers
+              >>= Int.fromString
+          Just { remaining: rem, limit: lim }
+        next = Headers.lookup "link" r.headers
+          >>= parseLinkNext
+      -- 304 Not Modified: use cached body
+      if r.status == 304 then
+        case cached of
+          Right (Just c) -> case jsonParser c.body of
+            Left e ->
+              pure $ Left ("Cache parse error: " <> e)
+            Right json ->
+              pure $ Right
+                { json, rateLimit: rl, linkNext: next }
+          _ -> pure $ Left "304 but no cache"
+      else case jsonParser r.body of
+        Left e ->
+          pure $ Left ("JSON parse error: " <> e)
+        Right json -> do
+          let
+            newETag = fromMaybe ""
+              (Headers.lookup "etag" r.headers)
+          _ <- try
+            (Cache.putCachedResponse url newETag r.body)
           pure $ Right
             { json, rateLimit: rl, linkNext: next }
 
